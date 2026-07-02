@@ -16,6 +16,7 @@ interface AgentStepPayload {
   status: string;
   thought: string | null;
   action: string | null;
+  mcp_tool_call: string | null;
 }
 
 export default function App() {
@@ -24,11 +25,18 @@ export default function App() {
     {
       id: 'welcome',
       sender: 'hiro',
-      text: 'Hello! I am Hiro, your desktop automation companion. I have been upgraded to the UI-TARS engine looping standard with full Coordinate Mapping, High-DPI support, Native Hotkey modifiers state protection, Non-Privileged safety bounds, and JSONL Audit logging.',
+      text: 'Welcome! I am Hiro, your visual-agent desktop automation platform. Upgraded to Phase 3 Production specifications with Hybrid MCP execution, visual memory decay culling, and global key Panic Stop protection.',
     },
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  // Settings Panel Config
+  const [showSettings, setShowSettings] = useState(false);
+  const [providerType, setProviderType] = useState('local');
+  const [endpoint, setEndpoint] = useState('http://localhost:11434/api/generate');
+  const [apiKey, setApiKey] = useState('');
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,19 +44,18 @@ export default function App() {
   }, [messages]);
 
   useEffect(() => {
-    // Listen for agent steps emitted from Rust backend
+    // Listen for real-time agent updates emitted from Rust background thread
     const unlisten = listen<AgentStepPayload>('agent-step', (event) => {
       const payload = event.payload;
       
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
-        if (lastMessage && lastMessage.sender === 'hiro' && lastMessage.status !== 'completed') {
-          // Update the running step details in the last message
+        if (lastMessage && lastMessage.sender === 'hiro' && lastMessage.status !== 'completed' && lastMessage.status !== 'aborted') {
           return [
             ...prev.slice(0, -1),
             {
               ...lastMessage,
-              text: payload.thought || lastMessage.text,
+              text: payload.mcp_tool_call || payload.thought || lastMessage.text,
               thought: payload.thought || undefined,
               action: payload.action || undefined,
               status: payload.status,
@@ -60,7 +67,7 @@ export default function App() {
             {
               id: Math.random().toString(),
               sender: 'hiro',
-              text: payload.thought || 'Processing next environment state...',
+              text: payload.mcp_tool_call || payload.thought || 'Processing next environment state...',
               thought: payload.thought || undefined,
               action: payload.action || undefined,
               status: payload.status,
@@ -69,7 +76,7 @@ export default function App() {
         }
       });
 
-      if (payload.status === 'completed') {
+      if (payload.status === 'completed' || payload.status === 'aborted') {
         setIsProcessing(false);
       }
     });
@@ -88,12 +95,12 @@ export default function App() {
     const userText = instruction;
     setInstruction('');
 
-    // Capture screenshot before agent loop kicks off
+    // Capture screen state snapshot (T0) before starting loop
     let screenshotBase64 = '';
     try {
       screenshotBase64 = await invoke<string>('capture_screen');
     } catch (err) {
-      console.error('Failed to capture screen prior to starting loop:', err);
+      console.error('Failed to capture screen snapshot:', err);
     }
 
     setMessages((prev) => [
@@ -124,6 +131,29 @@ export default function App() {
     }
   };
 
+  const saveSettings = async () => {
+    try {
+      await invoke('update_routing_settings', {
+        settings: {
+          provider_type: providerType,
+          endpoint: endpoint,
+          api_key: apiKey || null,
+        }
+      });
+      setShowSettings(false);
+    } catch (err) {
+      alert(`Failed to save routing profile settings: ${err}`);
+    }
+  };
+
+  const triggerManualPanic = async () => {
+    try {
+      await invoke('trigger_panic');
+    } catch (err) {
+      console.error('Panic trigger call failed:', err);
+    }
+  };
+
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -132,14 +162,69 @@ export default function App() {
           <span style={styles.title}>Hiro Desktop</span>
         </div>
         <div style={styles.systemBadge}>
-          <span style={styles.badgeText}>DPI Mapped</span>
-          <span style={styles.badgeText}>Audit Log: ON</span>
+          <button style={styles.settingsBtn} onClick={() => setShowSettings(!showSettings)}>
+            Settings
+          </button>
+          {isProcessing && (
+            <button style={styles.panicBtn} onClick={triggerManualPanic}>
+              Panic Stop (Shift+ESC)
+            </button>
+          )}
+          <span style={styles.badgeText}>Memory Tiering: ON</span>
         </div>
       </header>
 
       {errorMsg && (
         <div style={styles.errorBanner}>
-          <strong>Security Warning:</strong> {errorMsg}
+          <strong>Security Boundary Intercept:</strong> {errorMsg}
+        </div>
+      )}
+
+      {showSettings && (
+        <div style={styles.settingsModal}>
+          <h3 style={styles.modalTitle}>Provider Profile Routing</h3>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Inference Source</label>
+            <select
+              value={providerType}
+              onChange={(e) => {
+                setProviderType(e.target.value);
+                if (e.target.value === 'local') {
+                  setEndpoint('http://localhost:11434/api/generate');
+                } else {
+                  setEndpoint('https://api.openai.com/v1/chat/completions');
+                }
+              }}
+              style={styles.select}
+            >
+              <option value="local">Local Host (Ollama / vLLM)</option>
+              <option value="cloud">Cloud API Provider (OpenAI/Anthropic)</option>
+            </select>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Endpoint URL</label>
+            <input
+              type="text"
+              value={endpoint}
+              onChange={(e) => setEndpoint(e.target.value)}
+              style={styles.input}
+            />
+          </div>
+          {providerType === 'cloud' && (
+            <div style={styles.formGroup}>
+              <label style={styles.label}>API Key Header Token</label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                style={styles.input}
+              />
+            </div>
+          )}
+          <div style={styles.modalActions}>
+            <button onClick={saveSettings} style={styles.saveBtn}>Save Settings</button>
+            <button onClick={() => setShowSettings(false)} style={styles.cancelBtn}>Cancel</button>
+          </div>
         </div>
       )}
 
@@ -180,7 +265,7 @@ export default function App() {
 
               {msg.action && (
                 <div style={styles.actionBlock}>
-                  <span style={styles.actionLabel}>Deterministic Action Call: </span>
+                  <span style={styles.actionLabel}>Action Call: </span>
                   <code>{msg.action}</code>
                 </div>
               )}
@@ -195,9 +280,10 @@ export default function App() {
           type="text"
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
-          placeholder={isProcessing ? "Hiro is executing desktop steps..." : "Type instructions (e.g. 'click the web browser')..."}
+          placeholder={isProcessing ? "Hiro is executing desktop steps..." : "Type instructions (e.g. 'read hiro_audit.jsonl')..."}
           disabled={isProcessing}
-          style={styles.input}
+          style={styles.inputField}
+
         />
         <button
           type="submit"
@@ -208,7 +294,7 @@ export default function App() {
             cursor: (isProcessing || !instruction.trim()) ? 'not-allowed' : 'pointer',
           }}
         >
-          {isProcessing ? 'Working...' : 'Run'}
+          {isProcessing ? 'Running...' : 'Send'}
         </button>
       </form>
     </div>
@@ -253,7 +339,27 @@ const styles: Record<string, React.CSSProperties> = {
   },
   systemBadge: {
     display: 'flex',
+    alignItems: 'center',
     gap: '8px',
+  },
+  settingsBtn: {
+    background: 'rgba(255, 255, 255, 0.08)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    color: '#e2e8f0',
+    padding: '4px 12px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '0.8rem',
+  },
+  panicBtn: {
+    background: 'rgba(239, 68, 68, 0.2)',
+    border: '1px solid rgba(239, 68, 68, 0.4)',
+    color: '#f87171',
+    padding: '4px 12px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '0.8rem',
+    fontWeight: 600,
   },
   badgeText: {
     fontSize: '0.75rem',
@@ -269,6 +375,67 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#ef4444',
     padding: '12px 24px',
     fontSize: '0.9rem',
+  },
+  settingsModal: {
+    background: '#1e293b',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+    padding: '20px 24px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  modalTitle: {
+    margin: 0,
+    fontSize: '1rem',
+    fontWeight: 600,
+    color: '#f1f5f9',
+  },
+  formGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  label: {
+    fontSize: '0.8rem',
+    color: '#94a3b8',
+  },
+  select: {
+    background: '#0f172a',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '6px',
+    padding: '8px 12px',
+    color: '#e2e8f0',
+    outline: 'none',
+  },
+  input: {
+    background: '#0f172a',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '6px',
+    padding: '8px 12px',
+    color: '#e2e8f0',
+    outline: 'none',
+  },
+  modalActions: {
+    display: 'flex',
+    gap: '10px',
+    marginTop: '10px',
+  },
+  saveBtn: {
+    background: '#4f46e5',
+    color: '#fff',
+    border: 'none',
+    padding: '8px 16px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontWeight: 600,
+  },
+  cancelBtn: {
+    background: 'transparent',
+    color: '#94a3b8',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    padding: '8px 16px',
+    borderRadius: '6px',
+    cursor: 'pointer',
   },
   chatArea: {
     flex: 1,
@@ -367,7 +534,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'rgba(15, 23, 42, 0.6)',
     borderTop: '1px solid rgba(255, 255, 255, 0.06)',
   },
-  input: {
+  inputField: {
     flex: 1,
     background: '#1e293b',
     border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -377,6 +544,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.95rem',
     outline: 'none',
   },
+
   button: {
     background: 'linear-gradient(135deg, #4f46e5, #3b82f6)',
     border: 'none',
