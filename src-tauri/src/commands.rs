@@ -8,6 +8,7 @@ use scrap::{Capturer, Display};
 use std::io::{ErrorKind, Write};
 use std::fs::OpenOptions;
 use image::{ImageEncoder, ExtendedColorType};
+
 use image::codecs::jpeg::JpegEncoder;
 use enigo::{Enigo, Mouse, Keyboard, Settings, Coordinate, Key};
 use is_elevated::is_elevated;
@@ -17,6 +18,15 @@ pub struct AgentStepEvent {
     pub status: String,
     pub thought: Option<String>,
     pub action: Option<String>,
+    pub mcp_tool_call: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HistoricalTurn {
+    pub step: u32,
+    pub action: String,
+    pub thought: String,
+    pub screenshot: Option<String>, // Base64 JPEG string
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -28,14 +38,37 @@ pub struct AuditLogEntry {
     pub action: String,
 }
 
+// Settings Profile Configuration for VLM routing
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProviderSettings {
+    pub provider_type: String, // "local" or "cloud"
+    pub endpoint: String,
+    pub api_key: Option<String>,
+}
+
+use tokio_util::sync::CancellationToken;
+
 // Global active loop state helper
 struct ActiveState {
     is_running: bool,
+    history: Vec<HistoricalTurn>,
+    settings: ProviderSettings,
+    cancel_token: Option<CancellationToken>,
 }
 
 lazy_static::lazy_static! {
-    static ref STATE: Arc<Mutex<ActiveState>> = Arc::new(Mutex::new(ActiveState { is_running: false }));
+    static ref STATE: Arc<Mutex<ActiveState>> = Arc::new(Mutex::new(ActiveState { 
+        is_running: false,
+        history: Vec::new(),
+        settings: ProviderSettings {
+            provider_type: "local".to_string(),
+            endpoint: "http://localhost:11434/api/generate".to_string(),
+            api_key: None,
+        },
+        cancel_token: None,
+    }));
 }
+
 
 // Check non-privileged safety guard
 fn is_admin_or_root() -> bool {
@@ -51,6 +84,60 @@ fn write_audit_log(entry: AuditLogEntry) -> std::io::Result<()> {
         .open("hiro_audit.jsonl")?;
     file.write_all(serialized.as_bytes())?;
     Ok(())
+}
+
+// Adaptive Image Downsampler (Memory Tiering)
+// Max source width is downsampled to 800px width keeping aspect ratio for immediate history (T-1 to T-3)
+fn downsample_screenshot(base64_src: &str) -> Result<String, String> {
+    let raw_bytes = BASE64_STANDARD.decode(base64_src)
+        .map_err(|e| format!("Failed to decode base64: {}", e))?;
+    
+    let img = image::load_from_memory(&raw_bytes)
+        .map_err(|e| format!("Failed to parse image from memory: {}", e))?;
+
+    let resized = img.resize(800, 800, image::imageops::FilterType::Triangle);
+
+    let mut jpeg_bytes = Vec::new();
+    let encoder = JpegEncoder::new_with_quality(&mut jpeg_bytes, 60);
+    resized.write_with_encoder(encoder)
+        .map_err(|e| format!("Failed to write resized JPEG: {}", e))?;
+
+    Ok(BASE64_STANDARD.encode(&jpeg_bytes))
+}
+
+// Feature 1: Model Context Protocol (MCP) Mock Client
+fn execute_mcp_tool(name: &str, params: &Value) -> Result<Value, String> {
+    match name {
+        "read_file" => {
+            let path_str = params["path"].as_str().ok_or("Missing path parameter")?;
+            let content = std::fs::read_to_string(path_str)
+                .map_err(|e| format!("Failed to read file: {}", e))?;
+            Ok(serde_json::json!({ "content": content }))
+        },
+        "write_file" => {
+            let path_str = params["path"].as_str().ok_or("Missing path parameter")?;
+            let content = params["content"].as_str().ok_or("Missing content parameter")?;
+            std::fs::write(path_str, content)
+                .map_err(|e| format!("Failed to write file: {}", e))?;
+            Ok(serde_json::json!({ "status": "success" }))
+        },
+        "list_dir" => {
+            let path_str = params["path"].as_str().unwrap_or(".");
+            let paths = std::fs::read_dir(path_str)
+                .map_err(|e| format!("Failed to read directory: {}", e))?;
+            
+            let mut entries = Vec::new();
+            for entry in paths {
+                if let Ok(e) = entry {
+                    if let Some(s) = e.file_name().to_str() {
+                        entries.push(s.to_string());
+                    }
+                }
+            }
+            Ok(serde_json::json!({ "files": entries }))
+        },
+        _ => Err(format!("Unsupported MCP tool name: {}", name))
+    }
 }
 
 #[tauri::command]
@@ -220,7 +307,6 @@ pub async fn execute_action(app: AppHandle, action: String, params: Value) -> Re
                     let k = parse_key(k_str)?;
                     kb.press_key(k)?;
                 }
-                // When kb leaves scope, SafeKeyboardContext Drop handler automatically releases key modifiers in safety
             },
             "scroll" => {
                 let direction = params["direction"].as_str().ok_or("Missing scroll direction")?;
@@ -264,7 +350,6 @@ fn parse_action_string(action_line: &str) -> Option<(String, Value)> {
         if v_str.starts_with('"') && v_str.ends_with('"') {
             map.insert(k.to_string(), Value::String(v_str[1..v_str.len()-1].to_string()));
         } else if v_str.starts_with('[') && v_str.ends_with(']') {
-            // Simple array parser for hotkeys
             let inner = &v_str[1..v_str.len()-1];
             let list: Vec<Value> = inner.split(',')
                 .map(|s| s.trim().trim_matches('"').to_string())
@@ -281,19 +366,66 @@ fn parse_action_string(action_line: &str) -> Option<(String, Value)> {
     Some((name, Value::Object(map)))
 }
 
+// Update routing profile config settings
+#[tauri::command]
+pub async fn update_routing_settings(settings: ProviderSettings) -> Result<(), String> {
+    let mut state = STATE.lock().await;
+    state.settings = settings;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn trigger_panic(app: AppHandle) -> Result<(), String> {
+    let state_clone = STATE.clone();
+    let mut state = state_clone.lock().await;
+    
+    // 1. Forcefully cancel background worker loops
+    if let Some(token) = state.cancel_token.take() {
+        token.cancel();
+    }
+    state.is_running = false;
+
+    // 2. Sequentially release keyboard modifiers to prevent frozen inputs
+    tokio::task::spawn_blocking(|| {
+        let settings = Settings::default();
+        if let Ok(mut enigo) = Enigo::new(&settings) {
+            let _ = enigo.key(Key::Shift, enigo::Direction::Release);
+            let _ = enigo.key(Key::Control, enigo::Direction::Release);
+            let _ = enigo.key(Key::Alt, enigo::Direction::Release);
+            let _ = enigo.key(Key::Meta, enigo::Direction::Release);
+        }
+    }).await.map_err(|e| format!("Panic cleanup thread failed: {}", e))?;
+
+    // 3. Emit notification warning back to the UI layout
+    let _ = app.emit("agent-step", AgentStepEvent {
+        status: "aborted".into(),
+        thought: Some("EMERGENCY INTERRUPT ACTIVE: Loop aborted and cursor manual control restored!".into()),
+        action: Some("panic()".into()),
+        mcp_tool_call: None,
+    });
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn start_agent_loop(app: AppHandle, instruction: String) -> Result<(), String> {
+
     if is_admin_or_root() {
         return Err("Execution Rejected: Hiro cannot be run under elevated administrator or root privileges.".into());
     }
 
+
     let state_clone = STATE.clone();
+    let token = CancellationToken::new();
+    let token_clone = token.clone();
     {
         let mut state = state_clone.lock().await;
         if state.is_running {
             return Err("Agent loop is already running".into());
         }
         state.is_running = true;
+        state.cancel_token = Some(token);
+        state.history.clear(); // Reset history turns for the new instruction session
     }
 
     tokio::spawn(async move {
@@ -301,26 +433,58 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String) -> Result<(),
             status: "started".into(),
             thought: Some("Analyzing desktop state...".into()),
             action: None,
+            mcp_tool_call: None,
         });
 
-        // Simulating the feedback loops
+        // 6-step loop lifecycle simulation
         for step in 1..=6 {
+            if token_clone.is_cancelled() {
+                break;
+            }
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-
-            let mut _screenshot_base64 = "".to_string();
-            if let Ok(data) = capture_screen().await {
-                _screenshot_base64 = data;
+            if token_clone.is_cancelled() {
+                break;
             }
 
 
-            // Simulating parsing of VLM text tokens stream
-            let raw_vlm_text = if step < 6 {
-                format!("Thought: Locating target elements on screen to fulfill task.\nAction: click(x=500, y={})", step * 100)
+            // 1. Capture primary display screen frame buffer (T0)
+            let mut screenshot_base64 = "".to_string();
+            if let Ok(data) = capture_screen().await {
+                screenshot_base64 = data;
+            }
+
+            // 2. Perform Visual Context Memory Culling on previous history states
+            {
+                let mut state = state_clone.lock().await;
+                let history_len = state.history.len();
+                for i in 0..history_len {
+                    let steps_back = history_len - i;
+                    if steps_back >= 4 {
+                        // Episodic Visual Stripping: strip images entirely for T-4 and older
+                        state.history[i].screenshot = None;
+                    } else if steps_back >= 1 {
+                        // Immediate History Downsampling: compress screenshots for T-1 to T-3
+                        if let Some(ref img_src) = state.history[i].screenshot {
+                            if img_src.len() > 100000 { // Downsample only if not already resized
+                                if let Ok(downsampled) = downsample_screenshot(img_src) {
+                                    state.history[i].screenshot = Some(downsampled);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Simulating execution trace with both Hybrid MCP and standard coordinates
+            let raw_vlm_text = if step == 1 {
+                // Let's execute an MCP tool directly instead of coordinate mouse warping
+                "Thought: The user wants to read a file. I can do this using the MCP read_file tool.\nAction: call_tool(name=\"read_file\", path=\"hiro_audit.jsonl\")".to_string()
+            } else if step < 6 {
+                format!("Thought: Performing coordinate mouse action to locate UI components.\nAction: click(x=400, y={})", step * 100)
             } else {
-                "Thought: Target task completed successfully.\nAction: stop()".to_string()
+                "Thought: Task complete.\nAction: stop()".to_string()
             };
 
-            // Parse thoughts & actions
             let mut current_thought = "".to_string();
             let mut parsed_action = None;
 
@@ -334,8 +498,8 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String) -> Result<(),
                 }
             }
 
-            // Log entry into JSONL audit log
-            let hash_placeholder = format!("sha256_{}", step);
+            // Write to the append-only audit JSONL file
+            let hash_placeholder = format!("sha256_step_{}", step);
             let _ = write_audit_log(AuditLogEntry {
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 instruction: instruction.clone(),
@@ -344,13 +508,26 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String) -> Result<(),
                 action: parsed_action.as_ref().map(|p| p.2.clone()).unwrap_or_else(|| "none".to_string()),
             });
 
-            // Perform native execution unless it's stop
+            // Handle the parsed action routing
             if let Some((ref act_name, ref act_val, ref raw_act)) = parsed_action {
-                if act_name == "stop" {
+                if act_name == "call_tool" {
+                    let tool_name = act_val["name"].as_str().unwrap_or("");
+                    let _ = app.emit("agent-step", AgentStepEvent {
+                        status: "running".into(),
+                        thought: Some(current_thought.clone()),
+                        action: Some(raw_act.clone()),
+                        mcp_tool_call: Some(format!("Executing MCP tool call: {}...", tool_name)),
+                    });
+                    
+                    // Dispatch to direct local system MCP handler
+                    let _mcp_res = execute_mcp_tool(tool_name, act_val);
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                } else if act_name == "stop" {
                     let _ = app.emit("agent-step", AgentStepEvent {
                         status: "completed".into(),
-                        thought: Some(current_thought),
+                        thought: Some(current_thought.clone()),
                         action: Some(raw_act.clone()),
+                        mcp_tool_call: None,
                     });
                     break;
                 } else {
@@ -358,9 +535,21 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String) -> Result<(),
                         status: "running".into(),
                         thought: Some(current_thought.clone()),
                         action: Some(raw_act.clone()),
+                        mcp_tool_call: None,
                     });
-                    // Run native execution command
+                    // Run native OS coordinate warping or keyboards events
                     let _ = execute_action(app.clone(), act_name.clone(), act_val.clone()).await;
+                }
+
+                // Push current turn state to visual memory history stack
+                {
+                    let mut state = state_clone.lock().await;
+                    state.history.push(HistoricalTurn {
+                        step,
+                        action: raw_act.clone(),
+                        thought: current_thought.clone(),
+                        screenshot: Some(screenshot_base64),
+                    });
                 }
             }
 
