@@ -2,6 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-  hiro_lib::run();
+    hiro2_lib::run()
 }
-
