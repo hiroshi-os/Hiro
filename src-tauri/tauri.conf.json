@@ -1,22 +1,23 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "hiro2",
+  "productName": "hiro",
   "version": "0.1.0",
-  "identifier": "com.bit.hiro2",
+  "identifier": "com.bit.hiro",
   "build": {
     "beforeDevCommand": "bun run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "hiro2",
+        "title": "Hiro",
         "width": 800,
         "height": 600
       }
     ],
+
     "security": {
       "csp": null
     }
