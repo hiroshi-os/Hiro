@@ -261,120 +261,170 @@ fn parse_key(key_str: &str) -> Result<Key, String> {
     }
 }
 
-// Executes mapped OS operations inside Rust backend
-#[tauri::command]
-pub async fn execute_action(app: AppHandle, action: String, params: Value) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        let settings = Settings::default();
-        let mut enigo = Enigo::new(&settings).map_err(|e| format!("Failed to init Enigo: {:?}", e))?;
+// Coordinate Translation implementation within the native hardware injection node
+pub fn execute_native_action(action: ParsedAction, monitor_width: u32, monitor_height: u32, scale_factor: f64) {
+    let settings = Settings::default();
+    let mut enigo = match Enigo::new(&settings) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
 
-        match action.as_str() {
-            "click" | "double_click" | "right_click" => {
-                let norm_x = params["x"].as_f64().ok_or("Missing x coordinate")?;
-                let norm_y = params["y"].as_f64().ok_or("Missing y coordinate")?;
-                let (x, y) = map_coordinates(norm_x, norm_y, &app)?;
+    match action {
+        ParsedAction::Click { x, y } => {
+            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64 * scale_factor) as i32;
+            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64 * scale_factor) as i32;
+            
+            let _ = enigo.move_mouse(physical_x, physical_y, enigo::Coordinate::Abs);
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let _ = enigo.button(enigo::Button::Left, enigo::Direction::Click);
+        },
+        ParsedAction::DoubleFloat { x, y } => {
+            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64 * scale_factor) as i32;
+            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64 * scale_factor) as i32;
+            
+            let _ = enigo.move_mouse(physical_x, physical_y, enigo::Coordinate::Abs);
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let _ = enigo.button(enigo::Button::Left, enigo::Direction::Click);
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = enigo.button(enigo::Button::Left, enigo::Direction::Click);
+        },
+        ParsedAction::RightClick { x, y } => {
+            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64 * scale_factor) as i32;
+            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64 * scale_factor) as i32;
+            
+            let _ = enigo.move_mouse(physical_x, physical_y, enigo::Coordinate::Abs);
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let _ = enigo.button(enigo::Button::Right, enigo::Direction::Click);
+        },
+        ParsedAction::Drag { x1, y1, x2, y2 } => {
+            let physical_x1 = ((x1 as f64 / 1000.0) * monitor_width as f64 * scale_factor) as i32;
+            let physical_y1 = ((y1 as f64 / 1000.0) * monitor_height as f64 * scale_factor) as i32;
+            let physical_x2 = ((x2 as f64 / 1000.0) * monitor_width as f64 * scale_factor) as i32;
+            let physical_y2 = ((y2 as f64 / 1000.0) * monitor_height as f64 * scale_factor) as i32;
 
-                enigo.move_mouse(x, y, Coordinate::Abs).map_err(|e| format!("Mouse move failed: {:?}", e))?;
-                std::thread::sleep(std::time::Duration::from_millis(150));
-
-                let button = if action == "right_click" { enigo::Button::Right } else { enigo::Button::Left };
-                let clicks = if action == "double_click" { 2 } else { 1 };
-
-                for _ in 0..clicks {
-                    enigo.button(button, enigo::Direction::Click).map_err(|e| format!("Mouse click failed: {:?}", e))?;
-                    if clicks > 1 {
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    }
+            let _ = enigo.move_mouse(physical_x1, physical_y1, enigo::Coordinate::Abs);
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = enigo.button(enigo::Button::Left, enigo::Direction::Press);
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let _ = enigo.move_mouse(physical_x2, physical_y2, enigo::Coordinate::Abs);
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let _ = enigo.button(enigo::Button::Left, enigo::Direction::Release);
+        },
+        ParsedAction::Type { content } => {
+            let _ = enigo.text(&content);
+        },
+        ParsedAction::Scroll { direction } => {
+            let axis = enigo::Axis::Vertical;
+            let steps = if direction == "down" { -2 } else { 2 };
+            let _ = enigo.scroll(steps, axis);
+        },
+        ParsedAction::Hotkey { key } => {
+            if let Ok(mut kb) = SafeKeyboardContext::new(&settings) {
+                if let Ok(parsed_k) = parse_key(&key) {
+                    let _ = kb.press_key(parsed_k);
                 }
-            },
-            "drag" => {
-                let norm_x1 = params["x1"].as_f64().ok_or("Missing x1 coordinate")?;
-                let norm_y1 = params["y1"].as_f64().ok_or("Missing y1 coordinate")?;
-                let norm_x2 = params["x2"].as_f64().ok_or("Missing x2 coordinate")?;
-                let norm_y2 = params["y2"].as_f64().ok_or("Missing y2 coordinate")?;
-
-                let (x1, y1) = map_coordinates(norm_x1, norm_y1, &app)?;
-                let (x2, y2) = map_coordinates(norm_x2, norm_y2, &app)?;
-
-                enigo.move_mouse(x1, y1, Coordinate::Abs).map_err(|e| format!("Mouse move to start failed: {:?}", e))?;
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                enigo.button(enigo::Button::Left, enigo::Direction::Press).map_err(|e| format!("Mouse press failed: {:?}", e))?;
-                std::thread::sleep(std::time::Duration::from_millis(150));
-                enigo.move_mouse(x2, y2, Coordinate::Abs).map_err(|e| format!("Mouse drag failed: {:?}", e))?;
-                std::thread::sleep(std::time::Duration::from_millis(150));
-                enigo.button(enigo::Button::Left, enigo::Direction::Release).map_err(|e| format!("Mouse release failed: {:?}", e))?;
-            },
-            "type" => {
-                let text = params["text"].as_str().ok_or("Missing text parameter")?;
-                let mut kb = SafeKeyboardContext::new(&settings)?;
-                kb.type_text(text)?;
-            },
-            "hotkey" => {
-                let keys_arr = params["keys"].as_array().ok_or("Missing keys list array")?;
-                let mut kb = SafeKeyboardContext::new(&settings)?;
-                for val in keys_arr {
-                    let k_str = val.as_str().ok_or("Invalid key string")?;
-                    let k = parse_key(k_str)?;
-                    kb.press_key(k)?;
-                }
-            },
-            "scroll" => {
-                let direction = params["direction"].as_str().ok_or("Missing scroll direction")?;
-                let amount = params["amount"].as_i64().ok_or("Missing scroll amount")? as i32;
-                let axis = enigo::Axis::Vertical;
-                let steps = if direction == "down" { -amount } else { amount };
-                enigo.scroll(steps, axis).map_err(|e| format!("Scroll failed: {:?}", e))?;
-            },
-            _ => return Err(format!("Unsupported action type: {}", action)),
-        }
-        Ok(())
-    }).await.map_err(|e| format!("Task execution error: {}", e))?
+            }
+        },
+        _ => {}
+    }
 }
 
-// Parses actions from strings, returning name and json value representation
-fn parse_action_string(action_line: &str) -> Option<(String, Value)> {
-    let clean = action_line.trim();
-    if !clean.starts_with("Action:") {
-        return None;
-    }
-    let body = clean.strip_prefix("Action:")?.trim();
-    
-    // Parse stop()
-    if body == "stop()" {
-        return Some(("stop".to_string(), serde_json::json!({})));
-    }
-    
-    // Pattern matches: name(params)
-    let open_idx = body.find('(')?;
-    let close_idx = body.rfind(')')?;
-    let name = body[..open_idx].trim().to_string();
-    let params_str = &body[open_idx + 1..close_idx];
-    
-    let mut map = serde_json::Map::new();
-    for pair in params_str.split(',') {
-        if pair.trim().is_empty() { continue; }
-        let mut kv = pair.split('=');
-        let k = kv.next()?.trim();
-        let v_str = kv.next()?.trim();
-        
-        if v_str.starts_with('"') && v_str.ends_with('"') {
-            map.insert(k.to_string(), Value::String(v_str[1..v_str.len()-1].to_string()));
-        } else if v_str.starts_with('[') && v_str.ends_with(']') {
-            let inner = &v_str[1..v_str.len()-1];
-            let list: Vec<Value> = inner.split(',')
-                .map(|s| s.trim().trim_matches('"').to_string())
-                .map(Value::String)
-                .collect();
-            map.insert(k.to_string(), Value::Array(list));
-        } else if let Ok(num) = v_str.parse::<f64>() {
-            map.insert(k.to_string(), Value::Number(serde_json::Number::from_f64(num)?));
-        } else {
-            map.insert(k.to_string(), Value::String(v_str.to_string()));
-        }
-    }
-    
-    Some((name, Value::Object(map)))
+
+use regex::Regex;
+
+lazy_static::lazy_static! {
+    static ref CLICK_RE: Regex = Regex::new(r"click\(start_box='\((\d+),(\d+)\)'\)").unwrap();
+    static ref DOUBLE_CLICK_RE: Regex = Regex::new(r"left_double\(start_box='\((\d+),(\d+)\)'\)").unwrap();
+    static ref RIGHT_CLICK_RE: Regex = Regex::new(r"right_single\(start_box='\((\d+),(\d+)\)'\)").unwrap();
+    static ref DRAG_RE: Regex = Regex::new(r"drag\(start_box='\((\d+),(\d+)\)',\s*end_box='\((\d+),(\d+)\)'\)").unwrap();
+    static ref TYPE_RE: Regex = Regex::new(r"type\(content='(.*?)'\)").unwrap();
+    static ref SCROLL_RE: Regex = Regex::new(r"scroll\(direction='(up|down|left|right)'\)").unwrap();
+    static ref HOTKEY_RE: Regex = Regex::new(r"hotkey\(key='(.*?)'\)").unwrap();
+    static ref FINISHED_RE: Regex = Regex::new(r"finished\(\)").unwrap();
+    static ref CALL_TOOL_RE: Regex = Regex::new(r"call_tool\(name='(.*?)'(?:,\s*(.*?))?\)").unwrap();
 }
+
+#[derive(Debug, Clone)]
+pub enum ParsedAction {
+    Click { x: u32, y: u32 },
+    DoubleFloat { x: u32, y: u32 },
+    RightClick { x: u32, y: u32 },
+    Drag { x1: u32, y1: u32, x2: u32, y2: u32 },
+    Type { content: String },
+    Scroll { direction: String },
+    Hotkey { key: String },
+    CallTool { name: String, args: Value },
+    Stop,
+}
+
+pub fn parse_uitars_action(action_str: &str) -> Option<ParsedAction> {
+    let clean_str = action_str.trim();
+
+    if let Some(caps) = CLICK_RE.captures(clean_str) {
+        let x = caps[1].parse::<u32>().ok()?;
+        let y = caps[2].parse::<u32>().ok()?;
+        return Some(ParsedAction::Click { x, y });
+    }
+    
+    if let Some(caps) = DOUBLE_CLICK_RE.captures(clean_str) {
+        let x = caps[1].parse::<u32>().ok()?;
+        let y = caps[2].parse::<u32>().ok()?;
+        return Some(ParsedAction::DoubleFloat { x, y });
+    }
+
+    if let Some(caps) = RIGHT_CLICK_RE.captures(clean_str) {
+        let x = caps[1].parse::<u32>().ok()?;
+        let y = caps[2].parse::<u32>().ok()?;
+        return Some(ParsedAction::RightClick { x, y });
+    }
+
+    if let Some(caps) = DRAG_RE.captures(clean_str) {
+        let x1 = caps[1].parse::<u32>().ok()?;
+        let y1 = caps[2].parse::<u32>().ok()?;
+        let x2 = caps[3].parse::<u32>().ok()?;
+        let y2 = caps[4].parse::<u32>().ok()?;
+        return Some(ParsedAction::Drag { x1, y1, x2, y2 });
+    }
+
+    if let Some(caps) = TYPE_RE.captures(clean_str) {
+        return Some(ParsedAction::Type { content: caps[1].to_string() });
+    }
+
+    if let Some(caps) = SCROLL_RE.captures(clean_str) {
+        return Some(ParsedAction::Scroll { direction: caps[1].to_string() });
+    }
+
+    if let Some(caps) = HOTKEY_RE.captures(clean_str) {
+        return Some(ParsedAction::Hotkey { key: caps[1].to_string() });
+    }
+
+    if let Some(caps) = CALL_TOOL_RE.captures(clean_str) {
+        let name = caps[1].to_string();
+        let mut args = serde_json::json!({});
+        if let Some(args_raw) = caps.get(2) {
+            let args_str = args_raw.as_str().trim();
+            // Basic parsing of tool args (e.g. path='file.log')
+            let mut map = serde_json::Map::new();
+            for pair in args_str.split(',') {
+                let mut parts = pair.split('=');
+                if let (Some(k), Some(v)) = (parts.next(), parts.next()) {
+                    let key = k.trim().to_string();
+                    let val = v.trim().trim_matches('\'').to_string();
+                    map.insert(key, Value::String(val));
+                }
+            }
+            args = Value::Object(map);
+        }
+        return Some(ParsedAction::CallTool { name, args });
+    }
+
+    if FINISHED_RE.is_match(clean_str) || clean_str.contains("finished()") || clean_str.contains("stop()") {
+        return Some(ParsedAction::Stop);
+    }
+
+    None
+}
+
 
 // Update routing profile config settings
 #[tauri::command]
@@ -418,7 +468,9 @@ pub async fn trigger_panic(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn start_agent_loop(app: AppHandle, instruction: String) -> Result<(), String> {
+pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt: String) -> Result<(), String> {
+
+
 
     if is_admin_or_root() {
         return Err("Execution Rejected: Hiro cannot be run under elevated administrator or root privileges.".into());
@@ -428,6 +480,8 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String) -> Result<(),
     let state_clone = STATE.clone();
     let token = CancellationToken::new();
     let token_clone = token.clone();
+    let _ = system_prompt;
+
     {
         let mut state = state_clone.lock().await;
         if state.is_running {
@@ -459,9 +513,19 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String) -> Result<(),
 
             // 1. Capture primary display screen frame buffer (T0)
             let mut screenshot_base64 = "".to_string();
-            if let Ok(data) = capture_screen().await {
-                screenshot_base64 = data;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.hide();
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                if let Ok(data) = capture_screen().await {
+                    screenshot_base64 = data;
+                }
+                let _ = window.show();
+            } else {
+                if let Ok(data) = capture_screen().await {
+                    screenshot_base64 = data;
+                }
             }
+
 
             // 2. Perform Visual Context Memory Culling on previous history states
             {
@@ -485,25 +549,28 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String) -> Result<(),
                 }
             }
 
-            // Simulating execution trace with both Hybrid MCP and standard coordinates
+            // Simulating execution trace conforming to start_box training coordinates
             let raw_vlm_text = if step == 1 {
-                // Let's execute an MCP tool directly instead of coordinate mouse warping
-                "Thought: The user wants to read a file. I can do this using the MCP read_file tool.\nAction: call_tool(name=\"read_file\", path=\"hiro_audit.jsonl\")".to_string()
+                "Thought: Executing direct MCP write verification.\nAction: call_tool(name='write_file', path='src-tauri/hiro_audit.log', content='test')".to_string()
             } else if step < 6 {
-                format!("Thought: Performing coordinate mouse action to locate UI components.\nAction: click(x=400, y={})", step * 100)
+                format!("Thought: Locating targeted interface element.\nAction: click(start_box='(400,{})')", step * 100)
             } else {
-                "Thought: Task complete.\nAction: stop()".to_string()
+                "Thought: Operation accomplished.\nAction: finished()".to_string()
             };
+
 
             let mut current_thought = "".to_string();
             let mut parsed_action = None;
+            let mut raw_act_line = "".to_string();
 
             for line in raw_vlm_text.lines() {
                 if line.trim().starts_with("Thought:") {
                     current_thought = line.trim().strip_prefix("Thought:").unwrap().trim().to_string();
                 } else if line.trim().starts_with("Action:") {
-                    if let Some((act_name, act_val)) = parse_action_string(line) {
-                        parsed_action = Some((act_name, act_val, line.trim().to_string()));
+                    let action_part = line.trim().strip_prefix("Action:").unwrap().trim();
+                    if let Some(parsed) = parse_uitars_action(action_part) {
+                        parsed_action = Some(parsed);
+                        raw_act_line = line.trim().to_string();
                     }
                 }
             }
@@ -515,40 +582,48 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String) -> Result<(),
                 instruction: instruction.clone(),
                 screenshot_hash: hash_placeholder,
                 thought: current_thought.clone(),
-                action: parsed_action.as_ref().map(|p| p.2.clone()).unwrap_or_else(|| "none".to_string()),
+                action: raw_act_line.clone(),
             });
 
             // Handle the parsed action routing
-            if let Some((ref act_name, ref act_val, ref raw_act)) = parsed_action {
-                if act_name == "call_tool" {
-                    let tool_name = act_val["name"].as_str().unwrap_or("");
-                    let _ = app.emit("agent-step", AgentStepEvent {
-                        status: "running".into(),
-                        thought: Some(current_thought.clone()),
-                        action: Some(raw_act.clone()),
-                        mcp_tool_call: Some(format!("Executing MCP tool call: {}...", tool_name)),
-                    });
-                    
-                    // Dispatch to direct local system MCP handler
-                    let _mcp_res = execute_mcp_tool(tool_name, act_val);
-                    std::thread::sleep(std::time::Duration::from_millis(300));
-                } else if act_name == "stop" {
-                    let _ = app.emit("agent-step", AgentStepEvent {
-                        status: "completed".into(),
-                        thought: Some(current_thought.clone()),
-                        action: Some(raw_act.clone()),
-                        mcp_tool_call: None,
-                    });
-                    break;
-                } else {
-                    let _ = app.emit("agent-step", AgentStepEvent {
-                        status: "running".into(),
-                        thought: Some(current_thought.clone()),
-                        action: Some(raw_act.clone()),
-                        mcp_tool_call: None,
-                    });
-                    // Run native OS coordinate warping or keyboards events
-                    let _ = execute_action(app.clone(), act_name.clone(), act_val.clone()).await;
+            if let Some(act) = parsed_action {
+                match act {
+                    ParsedAction::CallTool { name, args } => {
+                        let _ = app.emit("agent-step", AgentStepEvent {
+                            status: "running".into(),
+                            thought: Some(current_thought.clone()),
+                            action: Some(raw_act_line.clone()),
+                            mcp_tool_call: Some(format!("Executing MCP tool call: {}...", name)),
+                        });
+                        let _mcp_res = execute_mcp_tool(&name, &args);
+                        std::thread::sleep(std::time::Duration::from_millis(300));
+                    },
+                    ParsedAction::Stop => {
+                        let _ = app.emit("agent-step", AgentStepEvent {
+                            status: "completed".into(),
+                            thought: Some(current_thought.clone()),
+                            action: Some(raw_act_line.clone()),
+                            mcp_tool_call: None,
+                        });
+                        break;
+                    },
+                    other_action => {
+                        let _ = app.emit("agent-step", AgentStepEvent {
+                            status: "running".into(),
+                            thought: Some(current_thought.clone()),
+                            action: Some(raw_act_line.clone()),
+                            mcp_tool_call: None,
+                        });
+                        
+                        // Execute native OS action (mapping 1000-based coordinates)
+                        if let Some(window) = app.get_webview_window("main") {
+                            if let Ok(Some(monitor)) = window.current_monitor() {
+                                let size = monitor.size();
+                                let scale_factor = monitor.scale_factor();
+                                execute_native_action(other_action, size.width, size.height, scale_factor);
+                            }
+                        }
+                    }
                 }
 
                 // Push current turn state to visual memory history stack
@@ -556,7 +631,7 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String) -> Result<(),
                     let mut state = state_clone.lock().await;
                     state.history.push(HistoricalTurn {
                         step,
-                        action: raw_act.clone(),
+                        action: raw_act_line.clone(),
                         thought: current_thought.clone(),
                         screenshot: Some(screenshot_base64),
                     });
@@ -573,3 +648,4 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String) -> Result<(),
 
     Ok(())
 }
+

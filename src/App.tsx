@@ -104,6 +104,24 @@ export default function App() {
       console.error('Failed to capture screen snapshot:', err);
     }
 
+    // Prompt Construction block matching UI-TARS behavioral dataset
+    const systemPrompt = `You are a GUI agent. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task.
+
+## Output Format
+Thought: ...
+Action: click(start_box='(x,y)') or other actions. Make sure to choose from the allowed Action Space.
+
+## Action Space
+click(start_box='(x,y)')
+left_double(start_box='(x,y)')
+right_single(start_box='(x,y)')
+drag(start_box='(x1,y1)', end_box='(x2,y2)')
+type(content='TEXT_STRING')
+scroll(direction='up' | 'down' | 'left' | 'right')
+hotkey(key='KEY_COMBINATION')
+finished()
+call_user()`;
+
     setMessages((prev) => [
       ...prev,
       {
@@ -114,11 +132,13 @@ export default function App() {
       },
     ]);
 
+
     setIsProcessing(true);
 
     try {
-      await invoke('start_agent_loop', { instruction: userText });
+      await invoke('start_agent_loop', { instruction: userText, systemPrompt });
     } catch (err) {
+
       setErrorMsg(String(err));
       setMessages((prev) => [
         ...prev,
