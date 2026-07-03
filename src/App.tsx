@@ -802,9 +802,8 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
             type="text"
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
-            placeholder={isProcessing ? 'Executing automated steps...' : 'Ask anything...'}
-            disabled={isProcessing}
-            className="w-full bg-transparent px-2.5 py-1.5 text-[13px] outline-none border-none placeholder-zinc-400 disabled:opacity-50"
+            placeholder={isProcessing ? 'Steer agent with hints...' : 'Ask anything...'}
+            className="w-full bg-transparent px-2.5 py-1.5 text-[13px] outline-none border-none placeholder-zinc-400"
           />
 
           {/* Bottom Line: Controls Bar */}
@@ -852,7 +851,7 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
             <button
               id="send-btn-trigger"
               type="submit"
-              disabled={isProcessing || !instruction.trim()}
+              disabled={!instruction.trim()}
               className={`flex items-center justify-center w-7 h-7 rounded-full font-semibold transition-all shadow-sm cursor-pointer
                 ${theme === 'dark' 
                   ? 'bg-zinc-250 text-zinc-950 hover:bg-zinc-100 disabled:bg-zinc-800/50 disabled:text-zinc-600' 
