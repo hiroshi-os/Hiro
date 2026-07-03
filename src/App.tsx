@@ -526,16 +526,19 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                           const isLastStep = stepIndex === msg.steps!.length - 1;
                           const isStepRunning = isLastStep && isProcessing && isLastMessage;
                           const shouldDefaultOpen = isLastStep && isLastMessage;
+                          const isOpen = expandedMessageIds[step.id] ?? shouldDefaultOpen;
                           const actionInfo = parseActionLabel(step.action);
 
                           return (
                             <details 
                               key={step.id}
                               className="group/details cursor-pointer w-full border-none bg-transparent"
-                              open={expandedMessageIds[step.id] ?? shouldDefaultOpen}
+                              open={isOpen}
                               onToggle={(e) => {
-                                const isOpen = (e.target as HTMLDetailsElement).open;
-                                setExpandedMessageIds(prev => ({ ...prev, [step.id]: isOpen }));
+                                const isDomOpen = (e.target as HTMLDetailsElement).open;
+                                if (isDomOpen !== isOpen) {
+                                  setExpandedMessageIds(prev => ({ ...prev, [step.id]: isDomOpen }));
+                                }
                               }}
                             >
                               <summary className="flex items-center gap-1.5 font-medium list-none select-none text-zinc-400 hover:text-zinc-200">
@@ -875,7 +878,7 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                   disabled={!instruction.trim()}
                   className={`flex items-center justify-center w-7 h-7 rounded-full font-semibold transition-all shadow-sm cursor-pointer
                     ${theme === 'dark' 
-                      ? 'bg-zinc-250 text-zinc-950 hover:bg-zinc-100 disabled:bg-zinc-800/50 disabled:text-zinc-600' 
+                      ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-200 disabled:bg-zinc-800/50 disabled:text-zinc-600' 
                       : 'bg-zinc-950 text-white hover:bg-zinc-900 disabled:bg-zinc-100 disabled:text-zinc-300'}`}
                   title="Send Task"
                 >
