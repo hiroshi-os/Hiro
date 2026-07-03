@@ -15,10 +15,11 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Hiro",
         "width": 460,
         "height": 680,
-        "decorations": false,
+        "decorated": false,
         "transparent": true,
         "resizable": true,
         "minWidth": 380,
