@@ -580,21 +580,10 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
                 break;
             }
 
-            // 1. Capture primary display — non-blocking window state transitions
+            // 1. Capture primary display — window is invisible via setContentProtected
             let mut screenshot_base64 = String::new();
-            if let Some(window) = app.get_webview_window("main") {
-                // 2.3 Async repaint cooldown: hide → yield to compositor → capture → show + focus
-                let _ = window.hide();
-                tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-                if let Ok(data) = capture_screen().await {
-                    screenshot_base64 = data;
-                }
-                let _ = window.show();
-                let _ = window.set_focus();
-            } else {
-                if let Ok(data) = capture_screen().await {
-                    screenshot_base64 = data;
-                }
+            if let Ok(data) = capture_screen().await {
+                screenshot_base64 = data;
             }
 
             if token_clone.is_cancelled() {

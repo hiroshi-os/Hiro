@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 interface Message {
   id: string;
@@ -25,23 +26,30 @@ export default function App() {
     {
       id: 'welcome',
       sender: 'hiro',
-      text: 'Welcome! I am Hiro, your visual-agent desktop automation platform. Configured with solid monochrome theme options.',
+      text: 'Ready. Type a task and I will execute it on your desktop.',
     },
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  
-  // Theme Toggle: 'dark' or 'light'
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  
-  // Settings Panel Config
   const [showSettings, setShowSettings] = useState(false);
   const [providerType, setProviderType] = useState('local');
   const [endpoint, setEndpoint] = useState('http://localhost:11434');
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('ui-tars');
-  
+  const [opacity, setOpacity] = useState(95);
+  const [maxSteps, setMaxSteps] = useState(15);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Content protection + window setup on mount
+  useEffect(() => {
+    const setup = async () => {
+      const win = getCurrentWindow();
+      await win.setContentProtected(true);
+    };
+    setup();
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -50,7 +58,7 @@ export default function App() {
   useEffect(() => {
     const unlisten = listen<AgentStepPayload>('agent-step', (event) => {
       const payload = event.payload;
-      
+
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
         if (lastMessage && lastMessage.sender === 'hiro' && lastMessage.status !== 'completed' && lastMessage.status !== 'aborted') {
@@ -70,7 +78,7 @@ export default function App() {
             {
               id: Math.random().toString(),
               sender: 'hiro',
-              text: payload.mcp_tool_call || payload.thought || 'Processing next environment state...',
+              text: payload.mcp_tool_call || payload.thought || 'Processing...',
               thought: payload.thought || undefined,
               action: payload.action || undefined,
               status: payload.status,
@@ -105,7 +113,6 @@ export default function App() {
       console.error('Failed to capture screen snapshot:', err);
     }
 
-    // Prompt Construction block — Hybrid Architecture (Coordinates + Template Grounding)
     const systemPrompt = `You are a GUI agent. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task.
 
 ## Output Format
@@ -144,20 +151,18 @@ call_user()`;
       },
     ]);
 
-
     setIsProcessing(true);
 
     try {
       await invoke('start_agent_loop', { instruction: userText, systemPrompt });
     } catch (err) {
-
       setErrorMsg(String(err));
       setMessages((prev) => [
         ...prev,
         {
           id: Math.random().toString(),
           sender: 'hiro',
-          text: `Error initializing execution cycle: ${err}`,
+          text: `Error: ${err}`,
         },
       ]);
       setIsProcessing(false);
@@ -176,7 +181,7 @@ call_user()`;
       });
       setShowSettings(false);
     } catch (err) {
-      alert(`Failed to save routing profile settings: ${err}`);
+      alert(`Failed to save settings: ${err}`);
     }
   };
 
@@ -184,7 +189,7 @@ call_user()`;
     try {
       await invoke('trigger_panic');
     } catch (err) {
-      console.error('Panic trigger call failed:', err);
+      console.error('Panic trigger failed:', err);
     }
   };
 
@@ -203,142 +208,194 @@ call_user()`;
     }
   };
 
-  const currentColors = theme === 'dark' ? darkColors : lightColors;
+  // Custom window controls
+  const minimizeWindow = () => getCurrentWindow().minimize();
+  const toggleMaximize = async () => {
+    const win = getCurrentWindow();
+    const maximized = await win.isMaximized();
+    if (maximized) {
+      await win.unmaximize();
+    } else {
+      await win.maximize();
+    }
+  };
+  const closeWindow = () => getCurrentWindow().close();
+
+  const c = theme === 'dark' ? darkColors : lightColors;
+  const bg = theme === 'dark'
+    ? `rgba(12, 12, 12, ${opacity / 100})`
+    : `rgba(255, 255, 255, ${opacity / 100})`;
 
   return (
-    <div style={{ ...styles.container, background: currentColors.background, color: currentColors.text }}>
-      <header style={{ ...styles.header, borderBottom: `1px solid ${currentColors.border}`, background: currentColors.headerBg }}>
-        <div style={styles.logoContainer}>
-          <div style={{ ...styles.indicator, background: currentColors.accent }} />
-          <span style={{ ...styles.title, color: currentColors.text }}>Hiro Desktop</span>
-        </div>
-        <div style={styles.systemBadge}>
-          <button 
-            style={{ ...styles.themeBtn, color: currentColors.text, border: `1px solid ${currentColors.border}`, background: currentColors.buttonBg }} 
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          >
-            {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-          </button>
-          <button 
-            style={{ ...styles.settingsBtn, color: currentColors.text, border: `1px solid ${currentColors.border}`, background: currentColors.buttonBg }} 
-            onClick={() => setShowSettings(!showSettings)}
-          >
-            Settings
-          </button>
-          {isProcessing && (
-            <button style={styles.panicBtn} onClick={triggerManualPanic}>
-              Panic Stop (Shift+ESC)
-            </button>
-          )}
-          <button 
-            style={{ ...styles.themeBtn, color: currentColors.text, border: `1px solid ${currentColors.border}`, background: currentColors.buttonBg, marginLeft: 4 }} 
-            onClick={clearSession}
-          >
-            New Session
-          </button>
-        </div>
-      </header>
+    <div style={{ ...s.shell, background: bg, color: c.text, borderColor: c.border }}>
 
+      {/* ─── Custom Titlebar ─── */}
+      <div data-tauri-drag-region="true" style={{ ...s.titlebar, borderBottom: `1px solid ${c.border}` }}>
+        <div data-tauri-drag-region="true" style={s.titleLeft}>
+          <div style={{ ...s.dot, background: isProcessing ? '#22c55e' : c.accent, boxShadow: isProcessing ? '0 0 8px #22c55e88' : 'none' }} />
+          <span data-tauri-drag-region="true" style={{ ...s.titleText, color: c.text }}>Hiro</span>
+          <span data-tauri-drag-region="true" style={{ ...s.titleSub, color: c.sub }}>v0.1</span>
+        </div>
+        <div style={s.titleRight}>
+          <button onClick={minimizeWindow} style={{ ...s.winBtn, color: c.sub }} title="Minimize">
+            <svg width="10" height="10" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>
+          </button>
+          <button onClick={toggleMaximize} style={{ ...s.winBtn, color: c.sub }} title="Maximize">
+            <svg width="10" height="10" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1"/></svg>
+          </button>
+          <button onClick={closeWindow} style={{ ...s.winBtnClose, color: c.sub }} title="Close">
+            <svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" strokeWidth="1.2"/><line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1.2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      {/* ─── Toolbar ─── */}
+      <div style={{ ...s.toolbar, borderBottom: `1px solid ${c.border}`, background: theme === 'dark' ? 'rgba(18,18,18,0.6)' : 'rgba(244,244,245,0.6)' }}>
+        <div style={s.toolGroup}>
+          <button style={{ ...s.toolBtn, color: c.text, background: c.btnBg, border: `1px solid ${c.border}` }} onClick={() => setShowSettings(!showSettings)}>
+            ⚙ Settings
+          </button>
+          <button style={{ ...s.toolBtn, color: c.text, background: c.btnBg, border: `1px solid ${c.border}` }} onClick={clearSession}>
+            ↺ New
+          </button>
+          <button style={{ ...s.toolBtn, color: c.text, background: c.btnBg, border: `1px solid ${c.border}` }} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+            {theme === 'dark' ? '☀' : '◑'}
+          </button>
+        </div>
+        {isProcessing && (
+          <button style={s.panicBtn} onClick={triggerManualPanic}>
+            ■ Stop
+          </button>
+        )}
+      </div>
+
+      {/* ─── Error Banner ─── */}
       {errorMsg && (
-        <div style={styles.errorBanner}>
-          <strong>Security Boundary Intercept:</strong> {errorMsg}
+        <div style={s.errorBanner}>
+          <strong>Error:</strong> {errorMsg}
         </div>
       )}
 
+      {/* ─── Settings Panel ─── */}
       {showSettings && (
-        <div style={{ ...styles.settingsModal, background: currentColors.headerBg, borderBottom: `1px solid ${currentColors.border}` }}>
-          <h3 style={{ ...styles.modalTitle, color: currentColors.text }}>Provider Profile Routing</h3>
-          <div style={styles.formGroup}>
-            <label style={{ ...styles.label, color: currentColors.subtext }}>Inference Source</label>
-            <select
-              value={providerType}
-              onChange={(e) => {
-                setProviderType(e.target.value);
-                if (e.target.value === 'local') {
-                  setEndpoint('http://localhost:11434');
-                } else {
-                  setEndpoint('https://api.openai.com/v1');
-                }
-              }}
-              style={{ ...styles.select, background: currentColors.inputBg, color: currentColors.text, border: `1px solid ${currentColors.border}` }}
-            >
-              <option value="local">Local Host (Ollama / vLLM)</option>
-              <option value="cloud">Cloud API Provider (OpenAI/Anthropic)</option>
-            </select>
+        <div style={{ ...s.settingsPanel, background: theme === 'dark' ? 'rgba(18,18,18,0.95)' : 'rgba(244,244,245,0.95)', borderBottom: `1px solid ${c.border}` }}>
+          <div style={s.settingsHeader}>
+            <span style={{ ...s.settingsTitle, color: c.text }}>Configuration</span>
+            <button onClick={() => setShowSettings(false)} style={{ ...s.closeSettingsBtn, color: c.sub }}>✕</button>
           </div>
-          <div style={styles.formGroup}>
-            <label style={{ ...styles.label, color: currentColors.subtext }}>Endpoint URL</label>
-            <input
-              type="text"
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-              style={{ ...styles.input, background: currentColors.inputBg, color: currentColors.text, border: `1px solid ${currentColors.border}` }}
-            />
-          </div>
-          {providerType === 'cloud' && (
-            <div style={styles.formGroup}>
-              <label style={{ ...styles.label, color: currentColors.subtext }}>API Key Header Token</label>
+
+          <div style={s.settingsGrid}>
+            <div style={s.formGroup}>
+              <label style={{ ...s.label, color: c.sub }}>Provider</label>
+              <select
+                value={providerType}
+                onChange={(e) => {
+                  setProviderType(e.target.value);
+                  setEndpoint(e.target.value === 'local' ? 'http://localhost:11434' : 'https://api.openai.com/v1');
+                }}
+                style={{ ...s.selectField, background: c.inputBg, color: c.text, border: `1px solid ${c.border}` }}
+              >
+                <option value="local">Local (Ollama / vLLM)</option>
+                <option value="cloud">Cloud (OpenAI / Anthropic)</option>
+              </select>
+            </div>
+
+            <div style={s.formGroup}>
+              <label style={{ ...s.label, color: c.sub }}>Model</label>
               <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                style={{ ...styles.input, background: currentColors.inputBg, color: currentColors.text, border: `1px solid ${currentColors.border}` }}
+                type="text"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="ui-tars, gpt-4o, qwen2.5-vl"
+                style={{ ...s.inputField, background: c.inputBg, color: c.text, border: `1px solid ${c.border}` }}
               />
             </div>
-          )}
-          <div style={styles.formGroup}>
-            <label style={{ ...styles.label, color: currentColors.subtext }}>Model Name</label>
-            <input
-              type="text"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="e.g. ui-tars, gpt-4o, qwen2.5-vl"
-              style={{ ...styles.input, background: currentColors.inputBg, color: currentColors.text, border: `1px solid ${currentColors.border}` }}
-            />
+
+            <div style={{ ...s.formGroup, gridColumn: '1 / -1' }}>
+              <label style={{ ...s.label, color: c.sub }}>Endpoint</label>
+              <input
+                type="text"
+                value={endpoint}
+                onChange={(e) => setEndpoint(e.target.value)}
+                style={{ ...s.inputField, background: c.inputBg, color: c.text, border: `1px solid ${c.border}` }}
+              />
+            </div>
+
+            {providerType === 'cloud' && (
+              <div style={{ ...s.formGroup, gridColumn: '1 / -1' }}>
+                <label style={{ ...s.label, color: c.sub }}>API Key</label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  style={{ ...s.inputField, background: c.inputBg, color: c.text, border: `1px solid ${c.border}` }}
+                />
+              </div>
+            )}
+
+            <div style={s.formGroup}>
+              <label style={{ ...s.label, color: c.sub }}>Opacity: {opacity}%</label>
+              <input
+                type="range" min="30" max="100" value={opacity}
+                onChange={(e) => setOpacity(Number(e.target.value))}
+                style={s.slider}
+              />
+            </div>
+
+            <div style={s.formGroup}>
+              <label style={{ ...s.label, color: c.sub }}>Max Steps</label>
+              <input
+                type="number" min="1" max="50" value={maxSteps}
+                onChange={(e) => setMaxSteps(Number(e.target.value))}
+                style={{ ...s.inputField, background: c.inputBg, color: c.text, border: `1px solid ${c.border}`, width: '70px' }}
+              />
+            </div>
           </div>
-          <div style={styles.modalActions}>
-            <button onClick={saveSettings} style={{ ...styles.saveBtn, background: currentColors.accent, color: theme === 'dark' ? '#000' : '#fff' }}>Save Settings</button>
-            <button onClick={() => setShowSettings(false)} style={{ ...styles.cancelBtn, color: currentColors.subtext, border: `1px solid ${currentColors.border}` }}>Cancel</button>
+
+          <div style={s.settingsActions}>
+            <button onClick={saveSettings} style={{ ...s.primaryBtn, background: c.accent, color: theme === 'dark' ? '#000' : '#fff' }}>Save</button>
+            <button onClick={() => setShowSettings(false)} style={{ ...s.ghostBtn, color: c.sub, border: `1px solid ${c.border}` }}>Cancel</button>
           </div>
         </div>
       )}
 
-      <div style={styles.chatArea}>
+      {/* ─── Chat Messages ─── */}
+      <div style={s.chatArea}>
         {messages.map((msg) => (
           <div
             key={msg.id}
             style={{
-              ...styles.messageRow,
+              ...s.msgRow,
               justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start',
             }}
           >
             <div
               style={{
-                ...styles.bubble,
-                background: msg.sender === 'user' ? currentColors.userBubble : currentColors.agentBubble,
-                border: `1px solid ${currentColors.border}`,
+                ...s.bubble,
+                background: msg.sender === 'user' ? c.userBubble : c.agentBubble,
+                border: `1px solid ${c.border}`,
               }}
             >
-              <div style={styles.messageText}>{msg.text}</div>
-              
+              <div style={s.msgText}>{msg.text}</div>
+
               {msg.screenshot && (
-                <div style={{ ...styles.screenshotContainer, border: `1px solid ${currentColors.border}` }}>
-                  <div style={{ ...styles.screenshotLabel, color: currentColors.subtext, background: currentColors.headerBg }}>Environment Capture Snapshot:</div>
-                  <img src={msg.screenshot} alt="Screen capture" style={styles.screenshot} />
+                <div style={{ ...s.snapWrap, border: `1px solid ${c.border}` }}>
+                  <div style={{ ...s.snapLabel, color: c.sub, background: c.headerBg }}>Snapshot</div>
+                  <img src={msg.screenshot} alt="capture" style={s.snapImg} />
                 </div>
               )}
 
               {msg.thought && (
-                <div style={{ ...styles.thinkingTrace, borderLeft: `3px solid ${currentColors.accent}`, background: currentColors.headerBg }}>
-                  <div style={{ ...styles.traceHeader, color: currentColors.accent }}>System-2 Trace</div>
-                  <div style={{ ...styles.traceBody, color: currentColors.text }}>{msg.thought}</div>
+                <div style={{ ...s.trace, borderLeft: `2px solid ${c.accent}`, background: c.headerBg }}>
+                  <div style={{ ...s.traceHead, color: c.accent }}>Thought</div>
+                  <div style={{ ...s.traceBody, color: c.text }}>{msg.thought}</div>
                 </div>
               )}
 
               {msg.action && (
-                <div style={{ ...styles.actionBlock, background: currentColors.inputBg, border: `1px solid ${currentColors.border}` }}>
-                  <span style={{ ...styles.actionLabel, color: currentColors.accent }}>Action Call: </span>
-                  <code>{msg.action}</code>
+                <div style={{ ...s.actionBlock, background: c.inputBg, border: `1px solid ${c.border}` }}>
+                  <span style={{ ...s.actionLabel, color: c.accent }}>→ </span>
+                  <code style={{ fontSize: '0.78rem', color: c.text }}>{msg.action}</code>
                 </div>
               )}
             </div>
@@ -347,141 +404,203 @@ call_user()`;
         <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={handleSend} style={{ ...styles.inputArea, background: currentColors.headerBg, borderTop: `1px solid ${currentColors.border}` }}>
+      {/* ─── Input Bar ─── */}
+      <form onSubmit={handleSend} style={{ ...s.inputBar, background: theme === 'dark' ? 'rgba(18,18,18,0.8)' : 'rgba(244,244,245,0.8)', borderTop: `1px solid ${c.border}` }}>
         <input
           type="text"
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
-          placeholder={isProcessing ? "Hiro is executing desktop steps..." : "Type instructions..."}
+          placeholder={isProcessing ? 'Executing...' : 'Describe a task...'}
           disabled={isProcessing}
-          style={{ ...styles.inputField, background: currentColors.inputBg, color: currentColors.text, border: `1px solid ${currentColors.border}` }}
+          style={{ ...s.chatInput, background: c.inputBg, color: c.text, border: `1px solid ${c.border}` }}
         />
         <button
           type="submit"
           disabled={isProcessing || !instruction.trim()}
           style={{
-            ...styles.button,
-            background: currentColors.accent,
+            ...s.sendBtn,
+            background: c.accent,
             color: theme === 'dark' ? '#000' : '#fff',
-            opacity: (isProcessing || !instruction.trim()) ? 0.5 : 1,
+            opacity: (isProcessing || !instruction.trim()) ? 0.4 : 1,
             cursor: (isProcessing || !instruction.trim()) ? 'not-allowed' : 'pointer',
           }}
         >
-          {isProcessing ? 'Running...' : 'Send'}
+          {isProcessing ? '...' : '↑'}
         </button>
       </form>
     </div>
   );
 }
 
-// Neutral Solid Palette
+/* ─── Color Palettes ─── */
 const darkColors = {
-  background: '#121212',
   text: '#e4e4e7',
-  subtext: '#a1a1aa',
+  sub: '#71717a',
   border: '#27272a',
-  headerBg: '#18181b',
-  buttonBg: '#27272a',
-  inputBg: '#18181b',
-  userBubble: '#27272a',
-  agentBubble: '#18181b',
-  accent: '#ffffff',
+  headerBg: '#141414',
+  btnBg: '#1e1e1e',
+  inputBg: '#1a1a1a',
+  userBubble: '#1e1e1e',
+  agentBubble: '#141414',
+  accent: '#e4e4e7',
 };
 
 const lightColors = {
-  background: '#ffffff',
   text: '#18181b',
-  subtext: '#71717a',
+  sub: '#a1a1aa',
   border: '#e4e4e7',
   headerBg: '#f4f4f5',
-  buttonBg: '#e4e4e7',
+  btnBg: '#ebebec',
   inputBg: '#ffffff',
   userBubble: '#f4f4f5',
   agentBubble: '#ffffff',
   accent: '#18181b',
 };
 
-const styles: Record<string, React.CSSProperties> = {
-  container: {
+/* ─── Styles ─── */
+const s: Record<string, React.CSSProperties> = {
+  shell: {
     display: 'flex',
     flexDirection: 'column',
     position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    boxSizing: 'border-box',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
+    inset: 0,
+    borderRadius: '12px',
+    border: '1px solid',
     overflow: 'hidden',
+    fontFamily: "'Inter', 'SF Pro Display', system-ui, -apple-system, sans-serif",
+    fontSize: '13px',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
   },
-
-
-
-  header: {
+  // Titlebar
+  titlebar: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '12px 20px',
+    height: '38px',
+    padding: '0 12px',
+    userSelect: 'none',
+    flexShrink: 0,
   },
-  logoContainer: {
+  titleLeft: {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
   },
-  indicator: {
-    width: '8px',
-    height: '8px',
+  dot: {
+    width: '7px',
+    height: '7px',
     borderRadius: '50%',
+    transition: 'all 0.3s ease',
   },
-  title: {
-    fontSize: '1rem',
+  titleText: {
+    fontSize: '12px',
     fontWeight: 600,
+    letterSpacing: '0.02em',
   },
-  systemBadge: {
+  titleSub: {
+    fontSize: '10px',
+    fontWeight: 400,
+    opacity: 0.5,
+  },
+  titleRight: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
+    gap: '2px',
   },
-  themeBtn: {
-    padding: '4px 10px',
-    borderRadius: '4px',
+  winBtn: {
+    background: 'none',
+    border: 'none',
     cursor: 'pointer',
-    fontSize: '0.75rem',
-    fontWeight: 500,
+    padding: '6px 8px',
+    borderRadius: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.6,
+    transition: 'opacity 0.15s',
   },
-  settingsBtn: {
-    padding: '4px 10px',
-    borderRadius: '4px',
+  winBtnClose: {
+    background: 'none',
+    border: 'none',
     cursor: 'pointer',
-    fontSize: '0.75rem',
+    padding: '6px 8px',
+    borderRadius: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.6,
+    transition: 'all 0.15s',
+  },
+  // Toolbar
+  toolbar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '6px 12px',
+    flexShrink: 0,
+  },
+  toolGroup: {
+    display: 'flex',
+    gap: '4px',
+  },
+  toolBtn: {
+    padding: '3px 10px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '11px',
     fontWeight: 500,
+    transition: 'all 0.15s',
+    lineHeight: '20px',
   },
   panicBtn: {
     background: '#7f1d1d',
-    border: '1px solid #b91c1c',
+    border: '1px solid #991b1b',
     color: '#fca5a5',
-    padding: '4px 10px',
-    borderRadius: '4px',
+    padding: '3px 12px',
+    borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '0.75rem',
+    fontSize: '11px',
     fontWeight: 600,
+    lineHeight: '20px',
   },
   errorBanner: {
-    background: '#7f1d1d',
+    background: '#450a0a',
     color: '#fca5a5',
-    padding: '10px 20px',
-    fontSize: '0.85rem',
+    padding: '8px 14px',
+    fontSize: '11px',
+    flexShrink: 0,
   },
-  settingsModal: {
-    padding: '16px 20px',
+  // Settings
+  settingsPanel: {
+    padding: '14px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '10px',
+    gap: '12px',
+    flexShrink: 0,
   },
-  modalTitle: {
-    margin: 0,
-    fontSize: '0.9rem',
+  settingsHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  settingsTitle: {
+    fontSize: '12px',
     fontWeight: 600,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase' as const,
+  },
+  closeSettingsBtn: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '14px',
+    padding: '2px 6px',
+  },
+  settingsGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '10px',
   },
   formGroup: {
     display: 'flex',
@@ -489,121 +608,141 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '4px',
   },
   label: {
-    fontSize: '0.75rem',
+    fontSize: '10px',
+    fontWeight: 500,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
   },
-  select: {
-    borderRadius: '4px',
-    padding: '6px 10px',
-    fontSize: '0.85rem',
+  selectField: {
+    borderRadius: '6px',
+    padding: '6px 8px',
+    fontSize: '12px',
+    outline: 'none',
+    appearance: 'none' as const,
+  },
+  inputField: {
+    borderRadius: '6px',
+    padding: '6px 8px',
+    fontSize: '12px',
     outline: 'none',
   },
-  input: {
-    borderRadius: '4px',
-    padding: '6px 10px',
-    fontSize: '0.85rem',
-    outline: 'none',
+  slider: {
+    width: '100%',
+    accentColor: '#71717a',
+    cursor: 'pointer',
+    height: '4px',
   },
-  modalActions: {
+  settingsActions: {
     display: 'flex',
-    gap: '8px',
-    marginTop: '6px',
+    gap: '6px',
   },
-  saveBtn: {
+  primaryBtn: {
     border: 'none',
-    padding: '6px 14px',
-    borderRadius: '4px',
+    padding: '5px 16px',
+    borderRadius: '6px',
     cursor: 'pointer',
     fontWeight: 600,
-    fontSize: '0.85rem',
+    fontSize: '11px',
   },
-  cancelBtn: {
+  ghostBtn: {
     background: 'transparent',
-    padding: '6px 14px',
-    borderRadius: '4px',
+    padding: '5px 16px',
+    borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '0.85rem',
+    fontSize: '11px',
   },
+  // Chat
   chatArea: {
     flex: 1,
-    padding: '20px',
+    padding: '14px',
     overflowY: 'auto',
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px',
+    gap: '10px',
   },
-  messageRow: {
+  msgRow: {
     display: 'flex',
-    maxWidth: '85%',
+    maxWidth: '92%',
   },
   bubble: {
-    padding: '12px 16px',
-    borderRadius: '8px',
-    fontSize: '0.9rem',
-    lineHeight: 1.4,
+    padding: '10px 13px',
+    borderRadius: '10px',
+    fontSize: '12.5px',
+    lineHeight: 1.45,
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
+    gap: '6px',
   },
-  messageText: {
+  msgText: {
     wordBreak: 'break-word',
   },
-  screenshotContainer: {
-    marginTop: '6px',
-    borderRadius: '4px',
+  snapWrap: {
+    marginTop: '4px',
+    borderRadius: '6px',
     overflow: 'hidden',
   },
-  screenshotLabel: {
-    fontSize: '0.7rem',
-    padding: '4px 8px',
+  snapLabel: {
+    fontSize: '9px',
+    padding: '3px 8px',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
   },
-  screenshot: {
+  snapImg: {
     width: '100%',
-    maxHeight: '240px',
+    maxHeight: '200px',
     objectFit: 'contain',
     display: 'block',
   },
-  thinkingTrace: {
+  trace: {
     borderRadius: '4px',
-    padding: '8px 10px',
+    padding: '6px 10px',
   },
-  traceHeader: {
-    fontSize: '0.7rem',
+  traceHead: {
+    fontSize: '9px',
     fontWeight: 600,
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
     marginBottom: '2px',
   },
   traceBody: {
-    fontSize: '0.8rem',
+    fontSize: '11.5px',
   },
   actionBlock: {
-    fontSize: '0.8rem',
-    padding: '6px 10px',
-    borderRadius: '4px',
+    fontSize: '11.5px',
+    padding: '5px 8px',
+    borderRadius: '6px',
     display: 'flex',
     gap: '4px',
     alignItems: 'center',
+    fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace",
   },
   actionLabel: {
     fontWeight: 600,
   },
-  inputArea: {
+  // Input bar
+  inputBar: {
     display: 'flex',
-    padding: '16px 20px',
-    gap: '10px',
+    padding: '10px 12px',
+    gap: '8px',
+    flexShrink: 0,
   },
-  inputField: {
+  chatInput: {
     flex: 1,
-    borderRadius: '6px',
-    padding: '10px 14px',
-    fontSize: '0.9rem',
+    borderRadius: '8px',
+    padding: '9px 12px',
+    fontSize: '12.5px',
     outline: 'none',
   },
-  button: {
+  sendBtn: {
     border: 'none',
-    padding: '0 20px',
-    borderRadius: '6px',
-    fontWeight: 600,
-    fontSize: '0.9rem',
+    width: '36px',
+    height: '36px',
+    borderRadius: '8px',
+    fontWeight: 700,
+    fontSize: '16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'opacity 0.15s',
   },
 };
