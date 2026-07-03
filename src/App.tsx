@@ -260,7 +260,10 @@ hotkey(key='KEY_COMBINATION')
 ### Control
 finished()
 call_user()
-wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, animations, or server responses before taking the next screenshot)`;
+wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, animations, or server responses before taking the next screenshot)
+
+## Guidelines
+- When typing content into chat boxes, input fields, or prompt boxes, prefer sending it by pressing Enter via hotkey(key='enter') rather than visually targeting and clicking the Send/Submit button. This is faster and avoids click precision issues.`;
 
     setMessages((prev) => [
       ...prev,
