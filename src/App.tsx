@@ -89,7 +89,7 @@ function parseActionLabel(action: string | undefined): {
     label = "Hotkey";
     const match = clean.match(/key='([^']+)'/);
     if (match) param = match[1];
-  } else if (clean.startsWith("finished")) {
+  } else if (clean.startsWith("finished") || clean.startsWith("stop")) {
     label = "Finished";
   } else if (clean.startsWith("call_user")) {
     label = "Call User";
@@ -628,93 +628,122 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                   <div className="w-full text-[12.5px] leading-relaxed flex flex-col gap-2.5">
                     {msg.steps && msg.steps.length > 0 ? (
                       <div className="flex flex-col gap-2">
-                        {msg.steps.map((step, stepIndex) => {
-                          const isLastStep =
-                            stepIndex === msg.steps!.length - 1;
-                          const isStepRunning =
-                            isLastStep && isProcessing && isLastMessage;
-                          const shouldDefaultOpen = isLastStep && isLastMessage;
-                          const isOpen =
-                            expandedMessageIds[step.id] ?? shouldDefaultOpen;
-                          const actionInfo = parseActionLabel(step.action);
+                        <div className="flex flex-col gap-2">
+                          {msg.steps
+                            .filter((step) => {
+                              const actionInfo = parseActionLabel(step.action);
+                              return actionInfo.label !== "Finished";
+                            })
+                            .map((step, stepIndex, filteredArray) => {
+                              const isLastStep =
+                                stepIndex === filteredArray.length - 1;
+                              const isStepRunning =
+                                isLastStep && isProcessing && isLastMessage;
+                              const shouldDefaultOpen = isLastStep && isLastMessage;
+                              const isOpen =
+                                expandedMessageIds[step.id] ?? shouldDefaultOpen;
+                              const actionInfo = parseActionLabel(step.action);
 
-                          return (
-                            <details
-                              key={step.id}
-                              className="group/details cursor-pointer w-full border-none bg-transparent"
-                              open={isOpen}
-                              onToggle={(e) => {
-                                const isDomOpen = (
-                                  e.target as HTMLDetailsElement
-                                ).open;
-                                if (isDomOpen !== isOpen) {
-                                  setExpandedMessageIds((prev) => ({
-                                    ...prev,
-                                    [step.id]: isDomOpen,
-                                  }));
-                                }
-                              }}
-                            >
-                              <summary className="flex items-center gap-1.5 font-medium list-none select-none text-zinc-400 hover:text-zinc-200">
-                                {/* Minimal plus indicator */}
-                                <span className="text-[11px] text-zinc-500 font-mono w-3.5 h-3.5 flex items-center justify-center select-none">
-                                  +
-                                </span>
-
-                                {/* Collapsed view: Action + Shimmer effect if running/active */}
-                                <div
-                                  className={`group-open/details:hidden ${isStepRunning ? "shimmer-text font-semibold" : ""} flex items-center min-w-0 max-w-[340px] truncate`}
+                              return (
+                                <details
+                                  key={step.id}
+                                  className="group/details cursor-pointer w-full border-none bg-transparent"
+                                  open={isOpen}
+                                  onToggle={(e) => {
+                                    const isDomOpen = (
+                                      e.target as HTMLDetailsElement
+                                    ).open;
+                                    if (isDomOpen !== isOpen) {
+                                      setExpandedMessageIds((prev) => ({
+                                        ...prev,
+                                        [step.id]: isDomOpen,
+                                      }));
+                                    }
+                                  }}
                                 >
-                                  <span
-                                    className={`${theme === "dark" ? "text-zinc-300" : "text-zinc-850"} font-semibold flex-shrink-0`}
-                                  >
-                                    {actionInfo.label}
-                                  </span>
-                                  {actionInfo.param && (
-                                    <span className="text-zinc-550 ml-1.5 font-normal truncate block select-none">
-                                      {actionInfo.param}
+                                  <summary className="flex items-center gap-1.5 font-medium list-none select-none text-zinc-400 hover:text-zinc-200">
+                                    <span className="text-[10px] text-zinc-500 font-mono select-none w-4 text-right">
+                                      {stepIndex + 1}
                                     </span>
-                                  )}
-                                </div>
+                                    {isStepRunning ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500 flex-shrink-0" />
+                                    ) : (
+                                      <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 text-zinc-500 font-semibold text-[11px] group-open/details:rotate-90 transition-transform">
+                                        ▶
+                                      </span>
+                                    )}
 
-                                {/* Expanded view: Header action name */}
-                                <div className="hidden group-open/details:inline font-semibold text-zinc-400">
-                                  {actionInfo.label}
-                                </div>
-                              </summary>
+                                    {/* Collapsed view: Action type and truncated param */}
+                                    <div className="inline group-open/details:hidden max-w-[85%] truncate select-none">
+                                      <span
+                                        className={`${theme === "dark" ? "text-zinc-300" : "text-zinc-850"} font-semibold flex-shrink-0`}
+                                      >
+                                        {actionInfo.label}
+                                      </span>
+                                      {actionInfo.param && (
+                                        <span className="text-zinc-550 ml-1.5 font-normal truncate block select-none">
+                                          {actionInfo.param}
+                                        </span>
+                                      )}
+                                    </div>
 
-                              {/* Expanded Indented Monochromatic Log Body */}
-                              <div className="mt-2 pl-4 flex flex-col gap-2 cursor-default border-l border-zinc-800/40">
-                                {step.thought && (
-                                  <div
-                                    className={`text-[12px] leading-relaxed max-w-[95%] ${theme === "dark" ? "text-zinc-400" : "text-zinc-600"}`}
-                                  >
-                                    {step.thought}
+                                    {/* Expanded view: Header action name */}
+                                    <div className="hidden group-open/details:inline font-semibold text-zinc-400">
+                                      {actionInfo.label}
+                                    </div>
+                                  </summary>
+
+                                  {/* Expanded Indented Monochromatic Log Body */}
+                                  <div className="mt-2 pl-4 flex flex-col gap-2 cursor-default border-l border-zinc-800/40">
+                                    {step.thought && (
+                                      <div
+                                        className={`text-[12px] leading-relaxed max-w-[95%] ${theme === "dark" ? "text-zinc-400" : "text-zinc-600"}`}
+                                      >
+                                        {step.thought}
+                                      </div>
+                                    )}
+
+                                    {step.action && (
+                                      <div className="font-mono text-[11px] text-zinc-500 break-all select-all">
+                                        {step.action}
+                                      </div>
+                                    )}
+
+                                    {step.screenshot && (
+                                      <div
+                                        className={`rounded-lg overflow-hidden border max-w-sm mt-1 transition-opacity duration-200 opacity-70 hover:opacity-100
+                                        ${theme === "dark" ? "border-zinc-800/60" : "border-zinc-200/60"}`}
+                                      >
+                                        <img
+                                          src={step.screenshot}
+                                          alt="capture"
+                                          className="w-full max-h-[160px] object-contain block"
+                                        />
+                                      </div>
+                                    )}
                                   </div>
-                                )}
+                                </details>
+                              );
+                            })}
+                        </div>
 
-                                {step.action && (
-                                  <div className="font-mono text-[11px] text-zinc-500 break-all select-all">
-                                    {step.action}
-                                  </div>
-                                )}
+                        {(() => {
+                          const finalStep = msg.steps.find((s) => {
+                            const actInfo = parseActionLabel(s.action);
+                            return actInfo.label === "Finished";
+                          }) || msg.steps[msg.steps.length - 1];
 
-                                {step.screenshot && (
-                                  <div
-                                    className={`rounded-lg overflow-hidden border max-w-sm mt-1 transition-opacity duration-200 opacity-70 hover:opacity-100
-                                    ${theme === "dark" ? "border-zinc-800/60" : "border-zinc-200/60"}`}
-                                  >
-                                    <img
-                                      src={step.screenshot}
-                                      alt="capture"
-                                      className="w-full max-h-[160px] object-contain block"
-                                    />
-                                  </div>
-                                )}
+                          if (finalStep && finalStep.thought) {
+                            return (
+                              <div
+                                className={`mt-1 font-normal ${theme === "dark" ? "text-zinc-200" : "text-zinc-800"}`}
+                              >
+                                {finalStep.thought}
                               </div>
-                            </details>
-                          );
-                        })}
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                     ) : (
                       // Handle static text response when steps list is empty (e.g. initial welcomes)
@@ -732,7 +761,7 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                       msg.sender === "hiro" &&
                       msg.id !== "welcome" &&
                       !msg.id.startsWith("reset-") && (
-                        <div className="flex items-center gap-3.5 mt-2.5 px-1 text-zinc-550 border-t border-zinc-850/40 pt-2">
+                        <div className="flex items-center gap-3.5 mt-2.5 px-1 text-zinc-550">
                           <button
                             onClick={handleCopySession}
                             className="hover:text-zinc-200 transition-colors cursor-pointer"
