@@ -19,7 +19,7 @@
         "title": "Hiro",
         "width": 460,
         "height": 680,
-        "decorated": false,
+        "decorations": false,
         "transparent": true,
         "resizable": true,
         "minWidth": 380,
