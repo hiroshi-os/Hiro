@@ -385,18 +385,27 @@ pub fn execute_native_action(action: ParsedAction, monitor_width: u32, monitor_h
                 eprintln!("[browser] Navigating to: {}", url);
                 if let Err(e) = crate::browser::browser_goto(&url).await {
                     eprintln!("[browser] Goto error: {}", e);
+                    let state_clone = STATE.clone();
+                    let mut state = state_clone.lock().await;
+                    state.last_extracted_text = Some(format!("[Error: browser_goto failed: {}]", e));
                 }
             },
             ParsedAction::BrowserClick { selector } => {
                 eprintln!("[browser] Clicking selector: {}", selector);
                 if let Err(e) = crate::browser::browser_click(&selector).await {
                     eprintln!("[browser] Click error: {}", e);
+                    let state_clone = STATE.clone();
+                    let mut state = state_clone.lock().await;
+                    state.last_extracted_text = Some(format!("[Error: browser_click failed: selector '{}' could not be clicked. Check selector or wait for rendering.]", selector));
                 }
             },
             ParsedAction::BrowserType { selector, text } => {
                 eprintln!("[browser] Typing into selector: {} -> {}", selector, text);
                 if let Err(e) = crate::browser::browser_type(&selector, &text).await {
                     eprintln!("[browser] Type error: {}", e);
+                    let state_clone = STATE.clone();
+                    let mut state = state_clone.lock().await;
+                    state.last_extracted_text = Some(format!("[Error: browser_type failed: selector '{}' could not be typed into.]", selector));
                 }
             },
             ParsedAction::BrowserExtract { selector } => {
@@ -410,6 +419,9 @@ pub fn execute_native_action(action: ParsedAction, monitor_width: u32, monitor_h
                     },
                     Err(e) => {
                         eprintln!("[browser] Extract error: {}", e);
+                        let state_clone = STATE.clone();
+                        let mut state = state_clone.lock().await;
+                        state.last_extracted_text = Some(format!("[Error: browser_extract failed: selector '{}' not found or returned no content. Verify selector syntax.]", selector));
                     }
                 }
             },
