@@ -139,7 +139,9 @@ pub fn scroll(direction: &str) -> Result<(), String> {
 
 /// Type a string using keyboard input.
 pub fn type_text(text: &str) -> Result<(), String> {
-    let gui = new_gui()?;
+    let mut gui = new_gui()?;
+    let _ = gui.left_click();
+    std::thread::sleep(std::time::Duration::from_millis(150));
     gui.keyboard_input(text)
         .map_err(|e| format!("Keyboard input failed: {}", e))
 }

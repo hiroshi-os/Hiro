@@ -290,25 +290,27 @@ pub fn execute_native_action(action: ParsedAction, monitor_width: u32, monitor_h
     match action {
         // ─── Coordinate-based actions (VLM start_box output, Enigo driver) ───
         ParsedAction::Click { x, y } => {
-            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64 * scale_factor) as u32;
-            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64 * scale_factor) as u32;
+            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64) as u32;
+            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64) as u32;
             let _ = grounding::click_at(physical_x, physical_y);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            let _ = grounding::click_at(physical_x, physical_y.saturating_sub(10));
         },
         ParsedAction::DoubleFloat { x, y } => {
-            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64 * scale_factor) as u32;
-            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64 * scale_factor) as u32;
+            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64) as u32;
+            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64) as u32;
             let _ = grounding::double_click_at(physical_x, physical_y);
         },
         ParsedAction::RightClick { x, y } => {
-            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64 * scale_factor) as u32;
-            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64 * scale_factor) as u32;
+            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64) as u32;
+            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64) as u32;
             let _ = grounding::right_click_at(physical_x, physical_y);
         },
         ParsedAction::Drag { x1, y1, x2, y2 } => {
-            let px1 = ((x1 as f64 / 1000.0) * monitor_width as f64 * scale_factor) as u32;
-            let py1 = ((y1 as f64 / 1000.0) * monitor_height as f64 * scale_factor) as u32;
-            let px2 = ((x2 as f64 / 1000.0) * monitor_width as f64 * scale_factor) as u32;
-            let py2 = ((y2 as f64 / 1000.0) * monitor_height as f64 * scale_factor) as u32;
+            let px1 = ((x1 as f64 / 1000.0) * monitor_width as f64) as u32;
+            let py1 = ((y1 as f64 / 1000.0) * monitor_height as f64) as u32;
+            let px2 = ((x2 as f64 / 1000.0) * monitor_width as f64) as u32;
+            let py2 = ((y2 as f64 / 1000.0) * monitor_height as f64) as u32;
             let _ = grounding::click_at(px1, py1);
             std::thread::sleep(std::time::Duration::from_millis(100));
             let _ = grounding::drag_to(px2, py2, 0.3);
@@ -346,6 +348,7 @@ pub fn execute_native_action(action: ParsedAction, monitor_width: u32, monitor_h
         // ─── Common actions (routed through grounding native drivers) ───
         ParsedAction::Type { content } => {
             let _ = grounding::type_text(&content);
+            std::thread::sleep(std::time::Duration::from_millis(300));
         },
         ParsedAction::Scroll { direction } => {
             let _ = grounding::scroll(&direction);
@@ -493,6 +496,10 @@ pub fn parse_uitars_action(action_str: &str) -> Option<ParsedAction> {
     if let Some(caps) = WAIT_RE.captures(clean_str) {
         let sec = caps[1].parse::<u32>().unwrap_or(3);
         return Some(ParsedAction::Wait { seconds: sec });
+    }
+
+    if clean_str.contains("wait()") {
+        return Some(ParsedAction::Wait { seconds: 3 });
     }
 
     if FINISHED_RE.is_match(clean_str) || clean_str.contains("finished()") || clean_str.contains("stop()") {
@@ -738,7 +745,7 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
                         screenshot: Some(screenshot_base64),
                     });
                 }
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(2500)).await;
                 continue;
             }
 

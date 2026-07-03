@@ -1,20 +1,27 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { LogicalPosition, LogicalSize, currentMonitor } from '@tauri-apps/api/window';
-import { 
-  Settings, 
-  RotateCcw, 
-  Sun, 
-  Moon, 
-  Minus, 
-  Columns, 
-  X, 
+import React, { useState, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import {
+  LogicalPosition,
+  LogicalSize,
+  currentMonitor,
+} from "@tauri-apps/api/window";
+import {
+  Settings,
+  RotateCcw,
+  Sun,
+  Moon,
+  Minus,
+  Columns,
+  X,
   Loader2,
   AlertTriangle,
-  Pin
-} from 'lucide-react';
+  Pin,
+  Copy,
+  ThumbsUp,
+  ThumbsDown,
+} from "lucide-react";
 
 interface AgentStep {
   id: string;
@@ -26,7 +33,7 @@ interface AgentStep {
 
 interface Message {
   id: string;
-  sender: 'user' | 'hiro';
+  sender: "user" | "hiro";
   text: string;
   screenshot?: string;
   steps?: AgentStep[];
@@ -39,7 +46,10 @@ interface AgentStepPayload {
   mcp_tool_call: string | null;
 }
 
-function parseActionLabel(action: string | undefined): { label: string; param: string } {
+function parseActionLabel(action: string | undefined): {
+  label: string;
+  param: string;
+} {
   if (!action) {
     return { label: "Thinking", param: "" };
   }
@@ -49,15 +59,18 @@ function parseActionLabel(action: string | undefined): { label: string; param: s
 
   if (clean.startsWith("click")) {
     label = "Click";
-    const match = clean.match(/target='([^']+)'/) || clean.match(/start_box='([^']+)'/);
+    const match =
+      clean.match(/target='([^']+)'/) || clean.match(/start_box='([^']+)'/);
     if (match) param = match[1];
   } else if (clean.startsWith("left_double")) {
     label = "Double Click";
-    const match = clean.match(/target='([^']+)'/) || clean.match(/start_box='([^']+)'/);
+    const match =
+      clean.match(/target='([^']+)'/) || clean.match(/start_box='([^']+)'/);
     if (match) param = match[1];
   } else if (clean.startsWith("right_single")) {
     label = "Right Click";
-    const match = clean.match(/target='([^']+)'/) || clean.match(/start_box='([^']+)'/);
+    const match =
+      clean.match(/target='([^']+)'/) || clean.match(/start_box='([^']+)'/);
     if (match) param = match[1];
   } else if (clean.startsWith("drag")) {
     label = "Drag";
@@ -90,68 +103,93 @@ function parseActionLabel(action: string | undefined): { label: string; param: s
 }
 
 export default function App() {
-  const [instruction, setInstruction] = useState('');
+  const [instruction, setInstruction] = useState("");
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: 'welcome',
-      sender: 'hiro',
-      text: 'Ready. Describe a task, and I will automate your desktop.',
+      id: "welcome",
+      sender: "hiro",
+      text: "Ready. Describe a task, and I will automate your desktop.",
     },
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [expandedMessageIds, setExpandedMessageIds] = useState<Record<string, boolean>>({});
-  const [clarifyQuestion, setClarifyQuestion] = useState<{ title: string; options: string[] } | null>(null);
+  const [expandedMessageIds, setExpandedMessageIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [clarifyQuestion, setClarifyQuestion] = useState<{
+    title: string;
+    options: string[];
+  } | null>(null);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [isPinned, setIsPinned] = useState(false);
+  const [isPinned, setIsPinned] = useState(true);
+  const [ghostMode, setGhostMode] = useState(true);
+  const [sessionFeedback, setSessionFeedback] = useState<
+    "like" | "dislike" | null
+  >(null);
+  const [lastUserInstruction, setLastUserInstruction] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [showSettings, setShowSettings] = useState(false);
-  const [providerType, setProviderType] = useState('local');
-  const [endpoint, setEndpoint] = useState('http://localhost:11434');
-  const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('minimax-m3:cloud');
+  const [providerType, setProviderType] = useState("local");
+  const [endpoint, setEndpoint] = useState("http://localhost:11434");
+  const [apiKey, setApiKey] = useState("");
+  const [model, setModel] = useState("minimax-m3:cloud");
   const [opacity, setOpacity] = useState(95);
   const [maxSteps, setMaxSteps] = useState(15);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Content protection on mount
+  // Content protection and always-on-top on mount
   useEffect(() => {
     const setup = async () => {
-      const win = getCurrentWebviewWindow();
-      await win.setContentProtected(true);
+      try {
+        const win = getCurrentWebviewWindow();
+        await win.setAlwaysOnTop(true);
+        const savedGhost = localStorage.getItem("hiro_ghost_mode") !== "false";
+        setGhostMode(savedGhost);
+        await win.setContentProtected(savedGhost);
+      } catch (err) {
+        console.error(
+          "Failed to configure screen privacy and pinning protection:",
+          err,
+        );
+      }
     };
     setup();
   }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   useEffect(() => {
-    const unlisten = listen<AgentStepPayload>('agent-step', (event) => {
+    const unlisten = listen<AgentStepPayload>("agent-step", (event) => {
       const payload = event.payload;
 
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
-        
+
         // Ensure the last message is a hiro response block
-        if (!lastMessage || lastMessage.sender !== 'hiro' || lastMessage.id === 'welcome' || lastMessage.id.startsWith('reset-')) {
+        if (
+          !lastMessage ||
+          lastMessage.sender !== "hiro" ||
+          lastMessage.id === "welcome" ||
+          lastMessage.id.startsWith("reset-")
+        ) {
           return [
             ...prev,
             {
-              id: 'hiro-' + Date.now(),
-              sender: 'hiro',
-              text: payload.thought || 'Processing...',
+              id: "hiro-" + Date.now(),
+              sender: "hiro",
+              text: payload.thought || "Processing...",
               steps: [
                 {
                   id: Math.random().toString(),
                   thought: payload.thought || undefined,
                   action: payload.action || undefined,
                   status: payload.status,
-                }
-              ]
-            }
+                },
+              ],
+            },
           ];
         }
 
@@ -161,9 +199,15 @@ export default function App() {
 
         // A step is considered "finished writing" if we already recorded an action for it,
         // and the incoming payload is starting a new VLM thought (i.e. action is null).
-        const isNewStepStarting = lastStep && lastStep.action && !payload.action;
+        const isNewStepStarting =
+          lastStep && lastStep.action && !payload.action;
 
-        if (lastStep && !isNewStepStarting && lastStep.status !== 'completed' && lastStep.status !== 'aborted') {
+        if (
+          lastStep &&
+          !isNewStepStarting &&
+          lastStep.status !== "completed" &&
+          lastStep.status !== "aborted"
+        ) {
           steps[steps.length - 1] = {
             ...lastStep,
             thought: payload.thought || lastStep.thought,
@@ -185,11 +229,11 @@ export default function App() {
             ...lastMessage,
             text: payload.thought || lastMessage.text,
             steps: steps,
-          }
+          },
         ];
       });
 
-      if (payload.status === 'completed' || payload.status === 'aborted') {
+      if (payload.status === "completed" || payload.status === "aborted") {
         setIsProcessing(false);
       }
     });
@@ -204,21 +248,23 @@ export default function App() {
     if (!instruction.trim()) return;
 
     const userText = instruction;
-    setInstruction('');
+    setInstruction("");
+    setLastUserInstruction(userText);
+    setSessionFeedback(null);
 
     if (isProcessing) {
       setMessages((prev) => [
         ...prev,
         {
           id: Math.random().toString(),
-          sender: 'user',
+          sender: "user",
           text: userText,
         },
       ]);
       try {
-        await invoke('inject_user_hint', { hint: userText });
+        await invoke("inject_user_hint", { hint: userText });
       } catch (err) {
-        console.error('Failed to inject user steering hint:', err);
+        console.error("Failed to inject user steering hint:", err);
       }
       return;
     }
@@ -226,11 +272,11 @@ export default function App() {
     setErrorMsg(null);
     const userMessageId = Math.random().toString();
 
-    let screenshotBase64 = '';
+    let screenshotBase64 = "";
     try {
-      screenshotBase64 = await invoke<string>('capture_screen');
+      screenshotBase64 = await invoke<string>("capture_screen");
     } catch (err) {
-      console.error('Failed to capture screen snapshot:', err);
+      console.error("Failed to capture screen snapshot:", err);
     }
 
     const systemPrompt = `You are a GUI agent. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task.
@@ -260,33 +306,38 @@ hotkey(key='KEY_COMBINATION')
 ### Control
 finished()
 call_user()
-wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, animations, or server responses before taking the next screenshot)
+wait(seconds=NUM_SECONDS) or wait() (use when waiting for transitions, loading bars, animations, or server responses before taking the next screenshot. wait() defaults to a 2.5 seconds pause)
 
 ## Guidelines
-- Before typing any text using type(content='TEXT_STRING'), ALWAYS perform a click action on the target input box/text area first to ensure it has keyboard focus.
-- When typing content into chat boxes, input fields, or prompt boxes, prefer sending it by pressing Enter via hotkey(key='enter') rather than visually targeting and clicking the Send/Submit button. This is faster and avoids click precision issues.`;
+1. To input text: You must FIRST click the input field to focus it, SECOND use type(content='...'), and THIRD use hotkey(key='enter') if a submission is required.
+2. Never emit hotkey(key='enter') to submit a form unless you have explicitly generated a type() action in a previous step.
+3. Do not combine selection and input actions into a single step.
+4. Text behavior inside inputs: When you execute type(content='...'), the text may visually overflow or look cut off/truncated in the next screenshot because the input field scrolls. This is NORMAL. If your action history shows you already typed the message, DO NOT try to select all, clear, delete, or retype it. Immediately move to hotkey(key='enter') to submit it.
+5. Interactive Focus Failures: If your action history shows you already attempted to click an input field or text box (e.g. at (517,848)) but the subsequent screenshot demonstrates that your text failed to register or typing didn't populate, DO NOT repeat the exact same coordinate points. The coordinate likely landed on unreactive padding or a border frame. You MUST modify your target position by trying coordinates a few pixels higher, lower, or to the left (e.g., offset by 15-20 pixels) to explicitly intercept the active text box center.`;
 
     setMessages((prev) => [
       ...prev,
       {
         id: userMessageId,
-        sender: 'user',
+        sender: "user",
         text: userText,
-        screenshot: screenshotBase64 ? `data:image/jpeg;base64,${screenshotBase64}` : undefined,
+        screenshot: screenshotBase64
+          ? `data:image/jpeg;base64,${screenshotBase64}`
+          : undefined,
       },
     ]);
 
     setIsProcessing(true);
 
     try {
-      await invoke('start_agent_loop', { instruction: userText, systemPrompt });
+      await invoke("start_agent_loop", { instruction: userText, systemPrompt });
     } catch (err) {
       setErrorMsg(String(err));
       setMessages((prev) => [
         ...prev,
         {
           id: Math.random().toString(),
-          sender: 'hiro',
+          sender: "hiro",
           text: `Error: ${err}`,
         },
       ]);
@@ -296,14 +347,17 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
 
   const saveSettings = async () => {
     try {
-      await invoke('update_routing_settings', {
+      await invoke("update_routing_settings", {
         settings: {
           provider_type: providerType,
           endpoint: endpoint,
           api_key: apiKey || null,
           model: model,
-        }
+        },
       });
+      const win = getCurrentWebviewWindow();
+      await win.setContentProtected(ghostMode);
+      localStorage.setItem('hiro_ghost_mode', ghostMode ? 'true' : 'false');
       setShowSettings(false);
     } catch (err) {
       alert(`Failed to save settings: ${err}`);
@@ -312,24 +366,26 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
 
   const triggerManualPanic = async () => {
     try {
-      await invoke('trigger_panic');
+      await invoke("trigger_panic");
     } catch (err) {
-      console.error('Panic trigger failed:', err);
+      console.error("Panic trigger failed:", err);
     }
   };
 
   const clearSession = async () => {
     try {
-      await invoke('clear_session');
-      setMessages([{
-        id: 'reset-' + Date.now(),
-        sender: 'hiro',
-        text: 'Session cleared. Ready for a new task.',
-      }]);
+      await invoke("clear_session");
+      setMessages([
+        {
+          id: "reset-" + Date.now(),
+          sender: "hiro",
+          text: "Session cleared. Ready for a new task.",
+        },
+      ]);
       setIsProcessing(false);
       setErrorMsg(null);
     } catch (err) {
-      console.error('Failed to clear session:', err);
+      console.error("Failed to clear session:", err);
     }
   };
 
@@ -352,8 +408,9 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
         const currentSize = await win.innerSize();
         const logicalCurrentSize = currentSize.toLogical(scaleFactor);
 
-        const isSidebar = Math.abs(logicalCurrentSize.width - sidebarWidth) < 15 && 
-                          Math.abs(logicalCurrentSize.height - targetHeight) < 15;
+        const isSidebar =
+          Math.abs(logicalCurrentSize.width - sidebarWidth) < 15 &&
+          Math.abs(logicalCurrentSize.height - targetHeight) < 15;
 
         if (isSidebar) {
           await win.setSize(new LogicalSize(460, 680));
@@ -364,7 +421,7 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
         }
       }
     } catch (err) {
-      console.error('Failed toggling sidebar layout mode:', err);
+      console.error("Failed toggling sidebar layout mode:", err);
     }
   };
   const closeWindow = () => getCurrentWebviewWindow().close();
@@ -375,81 +432,115 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
       await win.setAlwaysOnTop(nextPinState);
       setIsPinned(nextPinState);
     } catch (err) {
-      console.error('Failed toggling pin window state:', err);
+      console.error("Failed toggling pin window state:", err);
+    }
+  };
+
+  const handleCopySession = async () => {
+    const lastHiroMsg = messages[messages.length - 1];
+    if (!lastHiroMsg || !lastHiroMsg.steps) return;
+
+    const lines = lastHiroMsg.steps.map((step, i) => {
+      const actInfo = parseActionLabel(step.action);
+      return `Step ${i + 1}: ${actInfo.label} ${actInfo.param || ""}\nThought: ${step.thought || "N/A"}`;
+    });
+
+    const textToCopy = `Hiro Automated Execution Session Logs:\n\n${lines.join("\n\n")}`;
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+    } catch (err) {
+      console.error("Failed to copy session logs:", err);
+    }
+  };
+
+  const handleRetry = () => {
+    if (lastUserInstruction) {
+      setInstruction(lastUserInstruction);
+      setTimeout(() => {
+        const triggerBtn = document.getElementById("send-btn-trigger");
+        if (triggerBtn) triggerBtn.click();
+      }, 50);
     }
   };
 
   const handleMouseDown = async (e: React.MouseEvent) => {
-    if (e.button === 0 && !(e.target as HTMLElement).closest('button')) {
+    if (e.button === 0 && !(e.target as HTMLElement).closest("button")) {
       try {
         await getCurrentWebviewWindow().startDragging();
       } catch (err) {
-        console.error('Failed dragging window:', err);
+        console.error("Failed dragging window:", err);
       }
     }
   };
 
   const bgStyle = {
-    backgroundColor: theme === 'dark' 
-      ? `rgba(10, 10, 10, ${opacity / 100})` 
-      : `rgba(250, 250, 250, ${opacity / 100})`,
+    backgroundColor:
+      theme === "dark"
+        ? `rgba(10, 10, 10, ${opacity / 100})`
+        : `rgba(250, 250, 250, ${opacity / 100})`,
   };
 
   return (
-    <div 
-      style={bgStyle} 
+    <div
+      style={bgStyle}
       className={`flex flex-col absolute inset-0 rounded-xl overflow-hidden font-sans text-[13px] backdrop-blur-2xl transition-colors duration-200
-        ${theme === 'dark' ? 'text-zinc-200 shadow-2xl shadow-black/80' : 'text-zinc-800 shadow-2xl shadow-zinc-300/40'}`}
+        ${theme === "dark" ? "text-zinc-200 shadow-2xl shadow-black/80" : "text-zinc-800 shadow-2xl shadow-zinc-300/40"}`}
     >
       {/* ─── Custom Titlebar ─── */}
       {/* ─── Custom Titlebar (Autohide Hover Trigger) ─── */}
       <div className="group/titlebar relative flex flex-col flex-shrink-0 z-50 w-full transition-all duration-300">
         {/* Invisible Top Sensor Bar (8px height) when collapsed to capture hover */}
         <div className="absolute top-0 inset-x-0 h-2 bg-transparent z-50 pointer-events-auto" />
-        
+
         {/* Sliding & Fading Titlebar Panel */}
-        <div 
+        <div
           onMouseDown={handleMouseDown}
-          className={`flex justify-between items-center h-0 opacity-0 pointer-events-none 
-            group-hover/titlebar:h-[38px] group-hover/titlebar:opacity-100 group-hover/titlebar:pointer-events-auto 
+          className={`flex justify-between items-center h-0 opacity-0 pointer-events-none
+            group-hover/titlebar:h-[38px] group-hover/titlebar:opacity-100 group-hover/titlebar:pointer-events-auto
             transition-all duration-300 ease-out px-3 select-none border-b
-            ${theme === 'dark' 
-              ? 'border-transparent group-hover/titlebar:border-zinc-800/60 bg-zinc-950/40' 
-              : 'border-transparent group-hover/titlebar:border-zinc-200/60 bg-zinc-100/40'}`}
+            ${
+              theme === "dark"
+                ? "border-transparent group-hover/titlebar:border-zinc-800/60 bg-zinc-950/40"
+                : "border-transparent group-hover/titlebar:border-zinc-200/60 bg-zinc-100/40"
+            }`}
         >
           {/* Left Controls (Settings, Reset, Theme Toggle, Status) */}
           <div className="flex items-center gap-1.5 pointer-events-auto">
             {isProcessing && (
               <Loader2 className="w-3.5 h-3.5 mr-1 text-emerald-500 animate-spin" />
             )}
-            
-            <button 
-              onClick={() => setShowSettings(!showSettings)} 
+
+            <button
+              onClick={() => setShowSettings(!showSettings)}
               className="win-btn p-1.5 rounded-md hover:bg-zinc-500/15 text-zinc-400 hover:text-zinc-100 transition-colors"
               title="Configuration Settings"
             >
               <Settings className="w-3.5 h-3.5" />
             </button>
-            
-            <button 
-              onClick={clearSession} 
+
+            <button
+              onClick={clearSession}
               className="win-btn p-1.5 rounded-md hover:bg-zinc-500/15 text-zinc-400 hover:text-zinc-100 transition-colors"
               title="New Session / Reset"
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
-            
-            <button 
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
+
+            <button
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               className="win-btn p-1.5 rounded-md hover:bg-zinc-500/15 text-zinc-400 hover:text-zinc-100 transition-colors"
               title="Toggle theme mode"
             >
-              {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              {theme === "dark" ? (
+                <Sun className="w-3.5 h-3.5" />
+              ) : (
+                <Moon className="w-3.5 h-3.5" />
+              )}
             </button>
 
             {isProcessing && (
-              <button 
-                onClick={triggerManualPanic} 
+              <button
+                onClick={triggerManualPanic}
                 className="ml-2 px-2.5 py-0.5 bg-red-950/80 border border-red-800 text-red-300 rounded text-[10px] font-bold tracking-wide uppercase hover:bg-red-900 transition-colors cursor-pointer"
                 title="Stop Agent Loop Execution (Shift+ESC)"
               >
@@ -460,31 +551,33 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
 
           {/* Right Window Controls */}
           <div className="flex items-center gap-0.5 z-[1010] pointer-events-auto">
-            <button 
-              onClick={togglePinWindow} 
+            <button
+              onClick={togglePinWindow}
               className={`win-btn p-1.5 rounded-md transition-colors cursor-pointer
-                ${isPinned ? 'text-emerald-500 hover:text-emerald-450' : 'text-zinc-550 hover:text-zinc-100'}`} 
+                ${isPinned ? "text-emerald-500 hover:text-emerald-450" : "text-zinc-550 hover:text-zinc-100"}`}
               title={isPinned ? "Unpin Window" : "Pin Window (Always on Top)"}
             >
-              <Pin className={`w-3 h-3 ${isPinned ? 'rotate-45' : ''} transition-transform`} />
+              <Pin
+                className={`w-3 h-3 ${isPinned ? "rotate-45" : ""} transition-transform`}
+              />
             </button>
-            <button 
-              onClick={minimizeWindow} 
-              className="win-btn p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors" 
+            <button
+              onClick={minimizeWindow}
+              className="win-btn p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors"
               title="Minimize"
             >
               <Minus className="w-3.5 h-3.5" />
             </button>
-            <button 
-              onClick={toggleSidebarMode} 
-              className="win-btn p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors" 
+            <button
+              onClick={toggleSidebarMode}
+              className="win-btn p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors"
               title="Toggle Sidebar Layout"
             >
               <Columns className="w-3.5 h-3.5" />
             </button>
-            <button 
-              onClick={closeWindow} 
-              className="win-btn-close p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors" 
+            <button
+              onClick={closeWindow}
+              className="win-btn-close p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors"
               title="Close"
             >
               <X className="w-3.5 h-3.5" />
@@ -497,28 +590,29 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
       {errorMsg && (
         <div className="flex items-center gap-2 px-4 py-2 bg-red-950/70 border-b border-red-900/60 text-red-300 text-[11px] flex-shrink-0 animate-fade-in">
           <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-          <div className="truncate"><strong>Error:</strong> {errorMsg}</div>
+          <div className="truncate">
+            <strong>Error:</strong> {errorMsg}
+          </div>
         </div>
       )}
 
       {/* ─── Main Viewport Area ─── */}
       <div className="flex-1 relative flex flex-col overflow-hidden">
-        
         {/* Chat / Messages List */}
         <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3 scroll-smooth">
           {messages.map((msg, index) => {
-            const isUser = msg.sender === 'user';
+            const isUser = msg.sender === "user";
             const isLastMessage = index === messages.length - 1;
-            
+
             return (
               <div
                 key={msg.id}
-                className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}
+                className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}
               >
                 {isUser ? (
                   <div
                     className={`max-w-[85%] px-3 py-1.5 rounded-xl text-[12.5px] leading-relaxed shadow-sm
-                      ${theme === 'dark' ? 'bg-zinc-900/60 text-zinc-200' : 'bg-zinc-100 text-zinc-850'}`}
+                      ${theme === "dark" ? "bg-zinc-900/60 text-zinc-200" : "bg-zinc-100 text-zinc-850"}`}
                   >
                     <div>{msg.text}</div>
                   </div>
@@ -527,21 +621,29 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                     {msg.steps && msg.steps.length > 0 ? (
                       <div className="flex flex-col gap-2">
                         {msg.steps.map((step, stepIndex) => {
-                          const isLastStep = stepIndex === msg.steps!.length - 1;
-                          const isStepRunning = isLastStep && isProcessing && isLastMessage;
+                          const isLastStep =
+                            stepIndex === msg.steps!.length - 1;
+                          const isStepRunning =
+                            isLastStep && isProcessing && isLastMessage;
                           const shouldDefaultOpen = isLastStep && isLastMessage;
-                          const isOpen = expandedMessageIds[step.id] ?? shouldDefaultOpen;
+                          const isOpen =
+                            expandedMessageIds[step.id] ?? shouldDefaultOpen;
                           const actionInfo = parseActionLabel(step.action);
 
                           return (
-                            <details 
+                            <details
                               key={step.id}
                               className="group/details cursor-pointer w-full border-none bg-transparent"
                               open={isOpen}
                               onToggle={(e) => {
-                                const isDomOpen = (e.target as HTMLDetailsElement).open;
+                                const isDomOpen = (
+                                  e.target as HTMLDetailsElement
+                                ).open;
                                 if (isDomOpen !== isOpen) {
-                                  setExpandedMessageIds(prev => ({ ...prev, [step.id]: isDomOpen }));
+                                  setExpandedMessageIds((prev) => ({
+                                    ...prev,
+                                    [step.id]: isDomOpen,
+                                  }));
                                 }
                               }}
                             >
@@ -550,10 +652,14 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                                 <span className="text-[11px] text-zinc-500 font-mono w-3.5 h-3.5 flex items-center justify-center select-none">
                                   +
                                 </span>
-                                
+
                                 {/* Collapsed view: Action + Shimmer effect if running/active */}
-                                <div className={`group-open/details:hidden ${isStepRunning ? 'shimmer-text font-semibold' : ''} flex items-center min-w-0 max-w-[340px] truncate`}>
-                                  <span className={`${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-850'} font-semibold flex-shrink-0`}>
+                                <div
+                                  className={`group-open/details:hidden ${isStepRunning ? "shimmer-text font-semibold" : ""} flex items-center min-w-0 max-w-[340px] truncate`}
+                                >
+                                  <span
+                                    className={`${theme === "dark" ? "text-zinc-300" : "text-zinc-850"} font-semibold flex-shrink-0`}
+                                  >
                                     {actionInfo.label}
                                   </span>
                                   {actionInfo.param && (
@@ -572,7 +678,9 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                               {/* Expanded Indented Monochromatic Log Body */}
                               <div className="mt-2 pl-4 flex flex-col gap-2 cursor-default border-l border-zinc-800/40">
                                 {step.thought && (
-                                  <div className={`text-[12px] leading-relaxed max-w-[95%] ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                                  <div
+                                    className={`text-[12px] leading-relaxed max-w-[95%] ${theme === "dark" ? "text-zinc-400" : "text-zinc-600"}`}
+                                  >
                                     {step.thought}
                                   </div>
                                 )}
@@ -584,9 +692,15 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                                 )}
 
                                 {step.screenshot && (
-                                  <div className={`rounded-lg overflow-hidden border max-w-sm mt-1 transition-opacity duration-200 opacity-70 hover:opacity-100
-                                    ${theme === 'dark' ? 'border-zinc-800/60' : 'border-zinc-200/60'}`}>
-                                    <img src={step.screenshot} alt="capture" className="w-full max-h-[160px] object-contain block" />
+                                  <div
+                                    className={`rounded-lg overflow-hidden border max-w-sm mt-1 transition-opacity duration-200 opacity-70 hover:opacity-100
+                                    ${theme === "dark" ? "border-zinc-800/60" : "border-zinc-200/60"}`}
+                                  >
+                                    <img
+                                      src={step.screenshot}
+                                      alt="capture"
+                                      className="w-full max-h-[160px] object-contain block"
+                                    />
                                   </div>
                                 )}
                               </div>
@@ -596,10 +710,61 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                       </div>
                     ) : (
                       // Handle static text response when steps list is empty (e.g. initial welcomes)
-                      <div className={theme === 'dark' ? 'text-zinc-300' : 'text-zinc-800'}>
+                      <div
+                        className={
+                          theme === "dark" ? "text-zinc-300" : "text-zinc-800"
+                        }
+                      >
                         {msg.text}
                       </div>
                     )}
+
+                    {isLastMessage &&
+                      !isProcessing &&
+                      msg.sender === "hiro" &&
+                      msg.id !== "welcome" &&
+                      !msg.id.startsWith("reset-") && (
+                        <div className="flex items-center gap-3.5 mt-2.5 px-1 text-zinc-550 border-t border-zinc-850/40 pt-2">
+                          <button
+                            onClick={handleCopySession}
+                            className="hover:text-zinc-200 transition-colors cursor-pointer"
+                            title="Copy session logs"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() =>
+                              setSessionFeedback(
+                                sessionFeedback === "like" ? null : "like",
+                              )
+                            }
+                            className={`transition-colors cursor-pointer ${sessionFeedback === "like" ? "text-emerald-500 hover:text-emerald-400" : "hover:text-zinc-200"}`}
+                            title="Like session output"
+                          >
+                            <ThumbsUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() =>
+                              setSessionFeedback(
+                                sessionFeedback === "dislike"
+                                  ? null
+                                  : "dislike",
+                              )
+                            }
+                            className={`transition-colors cursor-pointer ${sessionFeedback === "dislike" ? "text-rose-500 hover:text-rose-400" : "hover:text-zinc-200"}`}
+                            title="Dislike session output"
+                          >
+                            <ThumbsDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={handleRetry}
+                            className="hover:text-zinc-200 transition-colors cursor-pointer"
+                            title="Retry session execution"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                   </div>
                 )}
               </div>
@@ -610,98 +775,145 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
 
         {/* Settings Overlay Panel */}
         {showSettings && (
-          <div className={`absolute inset-x-0 top-0 p-4 border-b flex flex-col gap-3 z-45 animate-slide-down backdrop-blur-xl shadow-md
-            ${theme === 'dark' ? 'bg-zinc-950/95 border-zinc-800/80' : 'bg-white/95 border-zinc-200/80'}`}>
+          <div
+            className={`absolute inset-x-0 top-0 p-4 border-b flex flex-col gap-3 z-45 animate-slide-down backdrop-blur-xl shadow-md
+            ${theme === "dark" ? "bg-zinc-950/95 border-zinc-800/80" : "bg-white/95 border-zinc-200/80"}`}
+          >
             <div className="flex justify-between items-center">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Configuration Profile</span>
-              <button onClick={() => setShowSettings(false)} className="text-zinc-500 hover:text-zinc-200 text-xs p-1 rounded hover:bg-zinc-500/10">✕</button>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+                Configuration Profile
+              </span>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="text-zinc-500 hover:text-zinc-200 text-xs p-1 rounded hover:bg-zinc-500/10"
+              >
+                ✕
+              </button>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Provider Source</label>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  Provider Source
+                </label>
                 <select
                   value={providerType}
                   onChange={(e) => {
                     setProviderType(e.target.value);
-                    setEndpoint(e.target.value === 'local' ? 'http://localhost:11434' : 'https://api.openai.com/v1');
+                    setEndpoint(
+                      e.target.value === "local"
+                        ? "http://localhost:11434"
+                        : "https://api.openai.com/v1",
+                    );
                   }}
                   className={`rounded-lg px-2.5 py-1.5 text-xs outline-none border cursor-pointer
-                    ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800'}`}
+                    ${theme === "dark" ? "bg-zinc-900 border-zinc-800 text-zinc-100" : "bg-white border-zinc-200 text-zinc-800"}`}
                 >
-                  <option value="local">Local (Ollama / vLLM)</option>
+                  <option value="local">Local (Ollama)</option>
                   <option value="cloud">Cloud (OpenAI / Compatible)</option>
                 </select>
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Model Name</label>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  Model Name
+                </label>
                 <input
                   type="text"
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                   placeholder="e.g. minimax-m3:cloud"
                   className={`rounded-lg px-2.5 py-1.5 text-xs outline-none border
-                    ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800'}`}
+                    ${theme === "dark" ? "bg-zinc-900 border-zinc-800 text-zinc-100" : "bg-white border-zinc-200 text-zinc-800"}`}
                 />
               </div>
 
               <div className="flex flex-col gap-1 col-span-2">
-                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">API Endpoint URL</label>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  API Endpoint URL
+                </label>
                 <input
                   type="text"
                   value={endpoint}
                   onChange={(e) => setEndpoint(e.target.value)}
                   className={`rounded-lg px-2.5 py-1.5 text-xs outline-none border
-                    ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800'}`}
+                    ${theme === "dark" ? "bg-zinc-900 border-zinc-800 text-zinc-100" : "bg-white border-zinc-200 text-zinc-800"}`}
                 />
               </div>
 
-              {providerType === 'cloud' && (
+              {providerType === "cloud" && (
                 <div className="flex flex-col gap-1 col-span-2">
-                  <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">API Key Header</label>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    API Key Header
+                  </label>
                   <input
                     type="password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     className={`rounded-lg px-2.5 py-1.5 text-xs outline-none border
-                    ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800'}`}
+                    ${theme === "dark" ? "bg-zinc-900 border-zinc-800 text-zinc-100" : "bg-white border-zinc-200 text-zinc-800"}`}
                   />
                 </div>
               )}
 
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Opacity: {opacity}%</label>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  Opacity: {opacity}%
+                </label>
                 <input
-                  type="range" min="30" max="100" value={opacity}
+                  type="range"
+                  min="30"
+                  max="100"
+                  value={opacity}
                   onChange={(e) => setOpacity(Number(e.target.value))}
                   className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-zinc-400 mt-2"
                 />
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Max Iteration Steps</label>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  Max Iteration Steps
+                </label>
                 <input
-                  type="number" min="1" max="50" value={maxSteps}
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={maxSteps}
                   onChange={(e) => setMaxSteps(Number(e.target.value))}
                   className={`rounded-lg px-2.5 py-1.5 text-xs outline-none border w-20
-                    ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800'}`}
+                    ${theme === "dark" ? "bg-zinc-900 border-zinc-800 text-zinc-100" : "bg-white border-zinc-200 text-zinc-800"}`}
                 />
+              </div>
+
+              <div className="flex items-center gap-2 col-span-2 mt-1">
+                <input
+                  id="ghost-mode-toggle"
+                  type="checkbox"
+                  checked={ghostMode}
+                  onChange={(e) => setGhostMode(e.target.checked)}
+                  className="rounded border-zinc-800 text-zinc-900 focus:ring-zinc-900 h-4 w-4 bg-zinc-900 accent-zinc-200 cursor-pointer"
+                />
+                <label 
+                  htmlFor="ghost-mode-toggle"
+                  className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 cursor-pointer select-none"
+                >
+                  Ghost Mode (Hide app window from screen captures)
+                </label>
               </div>
             </div>
 
             <div className="flex gap-2 mt-2">
-              <button 
-                onClick={saveSettings} 
+              <button
+                onClick={saveSettings}
                 className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm hover:opacity-90 cursor-pointer
-                  ${theme === 'dark' ? 'bg-zinc-100 text-zinc-950' : 'bg-zinc-900 text-zinc-100'}`}
+                  ${theme === "dark" ? "bg-zinc-100 text-zinc-950" : "bg-zinc-900 text-zinc-100"}`}
               >
                 Save Profile
               </button>
-              <button 
-                onClick={() => setShowSettings(false)} 
+              <button
+                onClick={() => setShowSettings(false)}
                 className={`px-4 py-1.5 rounded-lg text-xs border transition-all cursor-pointer
-                  ${theme === 'dark' ? 'border-zinc-800 text-zinc-400 hover:bg-zinc-900' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50'}`}
+                  ${theme === "dark" ? "border-zinc-800 text-zinc-400 hover:bg-zinc-900" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}
               >
                 Cancel
               </button>
@@ -711,15 +923,20 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
       </div>
 
       {/* ─── Bottom Chat Input Area ─── */}
-      <div className={`p-3 border-t flex-shrink-0 transition-colors ${theme === 'dark' ? 'border-zinc-900/50 bg-zinc-950/10' : 'border-zinc-200 bg-zinc-100/20'}`}>
+      <div
+        className={`p-3 border-t flex-shrink-0 transition-colors ${theme === "dark" ? "border-zinc-900/50 bg-zinc-950/10" : "border-zinc-200 bg-zinc-100/20"}`}
+      >
         {/* Clarification Questions Card */}
         {clarifyQuestion && (
-          <div className={`mb-3 p-3.5 rounded-[20px] border shadow-md flex flex-col gap-3 animate-slide-up
-            ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800'}`}>
-            
+          <div
+            className={`mb-3 p-3.5 rounded-[20px] border shadow-md flex flex-col gap-3 animate-slide-up
+            ${theme === "dark" ? "bg-zinc-900 border-zinc-800 text-zinc-100" : "bg-white border-zinc-200 text-zinc-800"}`}
+          >
             <div className="flex justify-between items-center px-0.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Clarification Request</span>
-              <button 
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                Clarification Request
+              </span>
+              <button
                 onClick={() => setClarifyQuestion(null)}
                 className="text-zinc-500 hover:text-zinc-300 text-xs p-0.5 rounded cursor-pointer"
               >
@@ -738,14 +955,23 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                   type="button"
                   onClick={() => setSelectedOption(i)}
                   className={`flex items-center gap-2.5 w-full text-left p-2 rounded-xl border text-[12px] transition-all cursor-pointer
-                    ${selectedOption === i 
-                      ? (theme === 'dark' ? 'border-zinc-400 bg-zinc-850 text-zinc-100' : 'border-zinc-500 bg-zinc-50 text-zinc-900') 
-                      : (theme === 'dark' ? 'border-zinc-800/80 hover:bg-zinc-800/40 text-zinc-455' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-655')}`}
+                    ${
+                      selectedOption === i
+                        ? theme === "dark"
+                          ? "border-zinc-400 bg-zinc-850 text-zinc-100"
+                          : "border-zinc-500 bg-zinc-50 text-zinc-900"
+                        : theme === "dark"
+                          ? "border-zinc-800/80 hover:bg-zinc-800/40 text-zinc-455"
+                          : "border-zinc-200 hover:bg-zinc-50 text-zinc-655"
+                    }`}
                 >
-                  <span className={`w-4 h-4 rounded text-[9.5px] font-semibold flex items-center justify-center border font-mono
-                    ${selectedOption === i 
-                      ? 'bg-zinc-150 text-zinc-950 border-transparent' 
-                      : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}
+                  <span
+                    className={`w-4 h-4 rounded text-[9.5px] font-semibold flex items-center justify-center border font-mono
+                    ${
+                      selectedOption === i
+                        ? "bg-zinc-150 text-zinc-950 border-transparent"
+                        : "bg-zinc-800 text-zinc-500 border-zinc-700"
+                    }`}
                   >
                     {i + 1}
                   </span>
@@ -773,18 +999,21 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                     const text = clarifyQuestion.options[selectedOption];
                     setClarifyQuestion(null);
                     setSelectedOption(null);
-                    
+
                     setInstruction(text);
                     setTimeout(() => {
-                      const triggerBtn = document.getElementById("send-btn-trigger");
+                      const triggerBtn =
+                        document.getElementById("send-btn-trigger");
                       if (triggerBtn) triggerBtn.click();
                     }, 50);
                   }
                 }}
                 className={`px-4 py-1.5 rounded-lg font-semibold shadow transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
-                  ${theme === 'dark' 
-                    ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-200' 
-                    : 'bg-zinc-950 text-white hover:bg-zinc-900'}`}
+                  ${
+                    theme === "dark"
+                      ? "bg-zinc-100 text-zinc-950 hover:bg-zinc-200"
+                      : "bg-zinc-950 text-white hover:bg-zinc-900"
+                  }`}
               >
                 Continue
               </button>
@@ -792,19 +1021,23 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
           </div>
         )}
 
-        <form 
-          onSubmit={handleSend} 
+        <form
+          onSubmit={handleSend}
           className={`flex flex-col p-2.5 rounded-[24px] border shadow-sm transition-all duration-200
-            ${theme === 'dark' 
-              ? 'bg-zinc-900/40 border-zinc-800/80 text-zinc-100 focus-within:border-zinc-700/80' 
-              : 'bg-white border-zinc-200/80 text-zinc-850 focus-within:border-zinc-300/80'}`}
+            ${
+              theme === "dark"
+                ? "bg-zinc-900/40 border-zinc-800/80 text-zinc-100 focus-within:border-zinc-700/80"
+                : "bg-white border-zinc-200/80 text-zinc-850 focus-within:border-zinc-300/80"
+            }`}
         >
           {/* Top Line: Input Field */}
           <input
             type="text"
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
-            placeholder={isProcessing ? 'Steer agent with hints...' : 'Ask anything...'}
+            placeholder={
+              isProcessing ? "Steer agent with hints..." : "Ask anything..."
+            }
             className="w-full bg-transparent px-2.5 py-1.5 text-[13px] outline-none border-none placeholder-zinc-400"
           />
 
@@ -812,40 +1045,90 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
           <div className="flex justify-between items-center mt-2 px-1">
             {/* Quick Action Icons */}
             <div className="flex items-center gap-1.5 pointer-events-auto">
-              <button 
+              <button
                 type="button"
                 className={`p-1.5 rounded-full border text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer
-                  ${theme === 'dark' ? 'border-zinc-800/60 hover:bg-zinc-800/60' : 'border-zinc-200 hover:bg-zinc-50'}`}
+                  ${theme === "dark" ? "border-zinc-800/60 hover:bg-zinc-800/60" : "border-zinc-200 hover:bg-zinc-50"}`}
                 title="Attach Source Files"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
               </button>
-              
-              <button 
+
+              <button
                 type="button"
                 className={`p-1.5 rounded-full border text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer
-                  ${theme === 'dark' ? 'border-zinc-800/60 hover:bg-zinc-800/60' : 'border-zinc-200 hover:bg-zinc-50'}`}
+                  ${theme === "dark" ? "border-zinc-800/60 hover:bg-zinc-800/60" : "border-zinc-200 hover:bg-zinc-50"}`}
                 title="Search Desktop / Web"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+                  <path d="M2 12h20" />
+                </svg>
               </button>
-              
-              <button 
+
+              <button
                 type="button"
                 className={`p-1.5 rounded-full border text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer
-                  ${theme === 'dark' ? 'border-zinc-800/60 hover:bg-zinc-800/60' : 'border-zinc-200 hover:bg-zinc-50'}`}
+                  ${theme === "dark" ? "border-zinc-800/60 hover:bg-zinc-800/60" : "border-zinc-200 hover:bg-zinc-50"}`}
                 title="Toggle Reasoning Context"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
+                  <path d="M9 18h6" />
+                  <path d="M10 22h4" />
+                </svg>
               </button>
-              
-              <button 
+
+              <button
                 type="button"
                 className={`p-1.5 rounded-full border text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer
-                  ${theme === 'dark' ? 'border-zinc-800/60 hover:bg-zinc-800/60' : 'border-zinc-200 hover:bg-zinc-50'}`}
+                  ${theme === "dark" ? "border-zinc-800/60 hover:bg-zinc-800/60" : "border-zinc-200 hover:bg-zinc-50"}`}
                 title="More Actions"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="1" />
+                  <circle cx="19" cy="12" r="1" />
+                  <circle cx="5" cy="12" r="1" />
+                </svg>
               </button>
             </div>
 
@@ -858,12 +1141,26 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                       id="send-btn-trigger"
                       type="submit"
                       className={`flex items-center justify-center w-7 h-7 rounded-full font-semibold transition-all shadow-sm cursor-pointer mr-1.5
-                        ${theme === 'dark' 
-                          ? 'bg-emerald-500 text-zinc-950 hover:bg-emerald-400' 
-                          : 'bg-emerald-600 text-white hover:bg-emerald-550'}`}
+                        ${
+                          theme === "dark"
+                            ? "bg-emerald-500 text-zinc-950 hover:bg-emerald-400"
+                            : "bg-emerald-600 text-white hover:bg-emerald-550"
+                        }`}
                       title="Steer Agent"
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 5v14"/></svg>
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="m5 12 7-7 7 7" />
+                        <path d="M12 5v14" />
+                      </svg>
                     </button>
                   )}
                   <button
@@ -872,7 +1169,16 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                     className="flex items-center justify-center w-7 h-7 rounded-full bg-red-950/80 border border-red-800 text-red-300 hover:bg-red-900 transition-all shadow-sm cursor-pointer"
                     title="Stop Agent Execution (Shift+ESC)"
                   >
-                    <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+                    <svg
+                      width="9"
+                      height="9"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <rect x="4" y="4" width="16" height="16" rx="2" />
+                    </svg>
                   </button>
                 </>
               ) : (
@@ -881,12 +1187,26 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                   type="submit"
                   disabled={!instruction.trim()}
                   className={`flex items-center justify-center w-7 h-7 rounded-full font-semibold transition-all shadow-sm cursor-pointer
-                    ${theme === 'dark' 
-                      ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-200 disabled:bg-zinc-800/50 disabled:text-zinc-600' 
-                      : 'bg-zinc-950 text-white hover:bg-zinc-900 disabled:bg-zinc-100 disabled:text-zinc-300'}`}
+                    ${
+                      theme === "dark"
+                        ? "bg-zinc-100 text-zinc-950 hover:bg-zinc-200 disabled:bg-zinc-800/50 disabled:text-zinc-600"
+                        : "bg-zinc-950 text-white hover:bg-zinc-900 disabled:bg-zinc-100 disabled:text-zinc-300"
+                    }`}
                   title="Send Task"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 5v14"/></svg>
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="m5 12 7-7 7 7" />
+                    <path d="M12 5v14" />
+                  </svg>
                 </button>
               )}
             </div>
