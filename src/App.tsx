@@ -80,6 +80,10 @@ function parseActionLabel(action: string | undefined, fallbackText: string): { l
     label = "Finished";
   } else if (clean.startsWith("call_user")) {
     label = "Call User";
+  } else if (clean.startsWith("wait")) {
+    label = "Wait";
+    const match = clean.match(/seconds=(\d+)/);
+    if (match) param = `${match[1]}s`;
   }
 
   return { label, param };
@@ -255,7 +259,8 @@ hotkey(key='KEY_COMBINATION')
 
 ### Control
 finished()
-call_user()`;
+call_user()
+wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, animations, or server responses before taking the next screenshot)`;
 
     setMessages((prev) => [
       ...prev,

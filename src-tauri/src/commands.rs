@@ -395,6 +395,7 @@ lazy_static::lazy_static! {
     static ref HOTKEY_RE: Regex = Regex::new(r"hotkey\(key='(.*?)'\)").unwrap();
     static ref FINISHED_RE: Regex = Regex::new(r"finished\(\)").unwrap();
     static ref CALL_TOOL_RE: Regex = Regex::new(r"call_tool\(name='(.*?)'(?:,\s*(.*?))?\)").unwrap();
+    static ref WAIT_RE: Regex = Regex::new(r"wait\(seconds=(\d+)\)").unwrap();
 }
 
 #[derive(Debug, Clone)]
@@ -412,6 +413,7 @@ pub enum ParsedAction {
     Type { content: String },
     Scroll { direction: String },
     Hotkey { key: String },
+    Wait { seconds: u32 },
     CallTool { name: String, args: Value },
     Stop,
 }
@@ -486,6 +488,11 @@ pub fn parse_uitars_action(action_str: &str) -> Option<ParsedAction> {
             args = Value::Object(map);
         }
         return Some(ParsedAction::CallTool { name, args });
+    }
+
+    if let Some(caps) = WAIT_RE.captures(clean_str) {
+        let sec = caps[1].parse::<u32>().unwrap_or(3);
+        return Some(ParsedAction::Wait { seconds: sec });
     }
 
     if FINISHED_RE.is_match(clean_str) || clean_str.contains("finished()") || clean_str.contains("stop()") {
@@ -776,6 +783,15 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
                         });
                     }
                     break;
+                },
+                ParsedAction::Wait { seconds } => {
+                    let _ = app.emit("agent-step", AgentStepEvent {
+                        status: "running".into(),
+                        thought: Some(current_thought.clone()),
+                        action: Some(raw_act_line.clone()),
+                        mcp_tool_call: Some(format!("Waiting {} seconds...", seconds)),
+                    });
+                    tokio::time::sleep(tokio::time::Duration::from_secs(seconds as u64)).await;
                 },
                 other_action => {
                     let _ = app.emit("agent-step", AgentStepEvent {
