@@ -278,84 +278,90 @@ call_user()`;
   return (
     <div 
       style={bgStyle} 
-      className={`flex flex-col absolute inset-0 rounded-xl border overflow-hidden font-sans text-[13px] backdrop-blur-2xl transition-colors duration-200
-        ${theme === 'dark' ? 'text-zinc-200 border-zinc-800/80 shadow-2xl shadow-black/80' : 'text-zinc-800 border-zinc-200/80 shadow-2xl shadow-zinc-300/40'}`}
+      className={`flex flex-col absolute inset-0 rounded-xl overflow-hidden font-sans text-[13px] backdrop-blur-2xl transition-colors duration-200
+        ${theme === 'dark' ? 'text-zinc-200 shadow-2xl shadow-black/80' : 'text-zinc-800 shadow-2xl shadow-zinc-300/40'}`}
     >
       {/* ─── Custom Titlebar ─── */}
-      <div 
-        onMouseDown={handleMouseDown}
-        className={`flex justify-between items-center h-[38px] px-3 select-none flex-shrink-0 z-50 border-b
-          ${theme === 'dark' ? 'border-zinc-800/60 bg-zinc-950/40' : 'border-zinc-200/60 bg-zinc-100/40'}`}
-      >
-        {/* Left Controls (Settings, Reset, Theme Toggle, Status) */}
-        <div className="flex items-center gap-1.5 pointer-events-auto">
-          {/* Status Dot */}
-          <div className="flex items-center justify-center w-5 h-5 mr-1">
-            {isProcessing ? (
-              <Loader2 className="w-3.5 h-3.5 text-emerald-500 animate-spin" />
-            ) : (
-              <div className={`w-2 h-2 rounded-full ${theme === 'dark' ? 'bg-zinc-400' : 'bg-zinc-500'}`} />
+      {/* ─── Custom Titlebar (Autohide Hover Trigger) ─── */}
+      <div className="group/titlebar relative flex flex-col flex-shrink-0 z-50 w-full transition-all duration-300">
+        {/* Invisible Top Sensor Bar (8px height) when collapsed to capture hover */}
+        <div className="absolute top-0 inset-x-0 h-2 bg-transparent z-50 pointer-events-auto" />
+        
+        {/* Sliding & Fading Titlebar Panel */}
+        <div 
+          onMouseDown={handleMouseDown}
+          className={`flex justify-between items-center h-0 opacity-0 pointer-events-none 
+            group-hover/titlebar:h-[38px] group-hover/titlebar:opacity-100 group-hover/titlebar:pointer-events-auto 
+            transition-all duration-300 ease-out px-3 select-none border-b
+            ${theme === 'dark' 
+              ? 'border-transparent group-hover/titlebar:border-zinc-800/60 bg-zinc-950/40' 
+              : 'border-transparent group-hover/titlebar:border-zinc-200/60 bg-zinc-100/40'}`}
+        >
+          {/* Left Controls (Settings, Reset, Theme Toggle, Status) */}
+          <div className="flex items-center gap-1.5 pointer-events-auto">
+            {isProcessing && (
+              <Loader2 className="w-3.5 h-3.5 mr-1 text-emerald-500 animate-spin" />
+            )}
+            
+            <button 
+              onClick={() => setShowSettings(!showSettings)} 
+              className="win-btn p-1.5 rounded-md hover:bg-zinc-500/15 text-zinc-400 hover:text-zinc-100 transition-colors"
+              title="Configuration Settings"
+            >
+              <Settings className="w-3.5 h-3.5" />
+            </button>
+            
+            <button 
+              onClick={clearSession} 
+              className="win-btn p-1.5 rounded-md hover:bg-zinc-500/15 text-zinc-400 hover:text-zinc-100 transition-colors"
+              title="New Session / Reset"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+            
+            <button 
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
+              className="win-btn p-1.5 rounded-md hover:bg-zinc-500/15 text-zinc-400 hover:text-zinc-100 transition-colors"
+              title="Toggle theme mode"
+            >
+              {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            </button>
+
+            {isProcessing && (
+              <button 
+                onClick={triggerManualPanic} 
+                className="ml-2 px-2.5 py-0.5 bg-red-950/80 border border-red-800 text-red-300 rounded text-[10px] font-bold tracking-wide uppercase hover:bg-red-900 transition-colors cursor-pointer"
+                title="Stop Agent Loop Execution (Shift+ESC)"
+              >
+                Panic Stop
+              </button>
             )}
           </div>
-          
-          <button 
-            onClick={() => setShowSettings(!showSettings)} 
-            className="win-btn p-1.5 rounded-md hover:bg-zinc-500/15 text-zinc-400 hover:text-zinc-100 transition-colors"
-            title="Configuration Settings"
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
-          
-          <button 
-            onClick={clearSession} 
-            className="win-btn p-1.5 rounded-md hover:bg-zinc-500/15 text-zinc-400 hover:text-zinc-100 transition-colors"
-            title="New Session / Reset"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-          
-          <button 
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
-            className="win-btn p-1.5 rounded-md hover:bg-zinc-500/15 text-zinc-400 hover:text-zinc-100 transition-colors"
-            title="Toggle theme mode"
-          >
-            {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-          </button>
 
-          {isProcessing && (
+          {/* Right Window Controls */}
+          <div className="flex items-center gap-0.5 z-[1010] pointer-events-auto">
             <button 
-              onClick={triggerManualPanic} 
-              className="ml-2 px-2.5 py-0.5 bg-red-950/80 border border-red-800 text-red-300 rounded text-[10px] font-bold tracking-wide uppercase hover:bg-red-900 transition-colors cursor-pointer"
-              title="Stop Agent Loop Execution (Shift+ESC)"
+              onClick={minimizeWindow} 
+              className="win-btn p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors" 
+              title="Minimize"
             >
-              Panic Stop
+              <Minus className="w-3.5 h-3.5" />
             </button>
-          )}
-        </div>
-
-        {/* Right Window Controls */}
-        <div className="flex items-center gap-0.5 z-[1010] pointer-events-auto">
-          <button 
-            onClick={minimizeWindow} 
-            className="win-btn p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors" 
-            title="Minimize"
-          >
-            <Minus className="w-3.5 h-3.5" />
-          </button>
-          <button 
-            onClick={toggleSidebarMode} 
-            className="win-btn p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors" 
-            title="Toggle Sidebar Layout"
-          >
-            <Columns className="w-3.5 h-3.5" />
-          </button>
-          <button 
-            onClick={closeWindow} 
-            className="win-btn-close p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors" 
-            title="Close"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+            <button 
+              onClick={toggleSidebarMode} 
+              className="win-btn p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors" 
+              title="Toggle Sidebar Layout"
+            >
+              <Columns className="w-3.5 h-3.5" />
+            </button>
+            <button 
+              onClick={closeWindow} 
+              className="win-btn-close p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors" 
+              title="Close"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 
