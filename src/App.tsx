@@ -671,14 +671,14 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                                     )}
 
                                     {/* Collapsed view: Action type and truncated param */}
-                                    <div className="inline group-open/details:hidden max-w-[85%] truncate select-none">
+                                    <div className="flex items-center group-open/details:hidden max-w-[85%] truncate select-none">
                                       <span
                                         className={`${theme === "dark" ? "text-zinc-300" : "text-zinc-850"} font-semibold flex-shrink-0`}
                                       >
                                         {actionInfo.label}
                                       </span>
                                       {actionInfo.param && (
-                                        <span className="text-zinc-550 ml-1.5 font-normal truncate block select-none">
+                                        <span className="text-zinc-550 ml-1.5 font-normal truncate inline select-none">
                                           {actionInfo.param}
                                         </span>
                                       )}
