@@ -761,16 +761,12 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                                   }}
                                 >
                                   <summary className="flex items-center gap-1.5 font-medium list-none select-none text-zinc-400 hover:text-zinc-200">
-                                    {isStepRunning ? (
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500 flex-shrink-0" />
-                                    ) : (
-                                      <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 text-zinc-500 font-bold text-[10px] group-open/details:rotate-90 transition-transform select-none font-mono">
-                                        &gt;
-                                      </span>
-                                    )}
+                                    <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 text-zinc-500 font-bold text-[10px] group-open/details:rotate-90 transition-transform select-none font-mono">
+                                      &gt;
+                                    </span>
 
                                     {/* Collapsed view: Action type and truncated param */}
-                                    <div className="flex items-center group-open/details:hidden max-w-[85%] truncate select-none">
+                                    <div className={`flex items-center group-open/details:hidden max-w-[85%] truncate select-none ${isStepRunning ? "shimmer-text font-semibold" : ""}`}>
                                       <span
                                         className={`${theme === "dark" ? "text-zinc-300" : "text-zinc-850"} font-semibold flex-shrink-0`}
                                       >
@@ -829,7 +825,7 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                             return actInfo.label === "Finished";
                           }) || msg.steps[msg.steps.length - 1];
 
-                          if (finalStep && finalStep.thought) {
+                          if (!isProcessing && finalStep && finalStep.thought) {
                             return (
                               <div
                                 className={`mt-1 font-normal ${theme === "dark" ? "text-zinc-200" : "text-zinc-800"}`}
@@ -1235,18 +1231,18 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                 </svg>
               </button>
 
-              <div className="relative inline-block">
+              <div className="relative inline-block ml-1">
                 <button
                   type="button"
                   onClick={() => setShowModeDropdown(!showModeDropdown)}
-                  className={`rounded-full px-2.5 py-0.5 text-[9px] font-extrabold outline-none border cursor-pointer uppercase tracking-wider select-none flex items-center gap-1.5 transition-all
+                  className={`rounded-full px-3 py-1 text-[11px] font-medium outline-none border cursor-pointer select-none flex items-center gap-1.5 transition-all
                     ${theme === "dark" 
-                      ? "bg-zinc-900 border-zinc-800 text-zinc-350 hover:text-zinc-150 hover:border-zinc-700" 
+                      ? "bg-zinc-900/60 border-zinc-800/80 text-zinc-350 hover:text-zinc-150 hover:border-zinc-700/80" 
                       : "bg-white border-zinc-200 text-zinc-550 hover:text-zinc-800 hover:border-zinc-300"}`}
                   title="Select agent execution mode"
                 >
-                  <span>{agentMode}</span>
-                  <span className="text-[7px] opacity-60">▼</span>
+                  <span className="capitalize">{agentMode} Mode</span>
+                  <span className="text-[6.5px] opacity-50 select-none">▼</span>
                 </button>
 
                 {showModeDropdown && (
@@ -1255,37 +1251,47 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                       className="fixed inset-0 z-40" 
                       onClick={() => setShowModeDropdown(false)} 
                     />
-                    <div className={`absolute bottom-full left-0 mb-2 w-48 rounded-2xl border p-1.5 shadow-xl z-50 flex flex-col gap-0.5 animate-slide-up backdrop-blur-xl
-                      ${theme === "dark" ? "bg-zinc-950/95 border-zinc-850/80" : "bg-white/95 border-zinc-200"}`}
+                    <div className={`absolute bottom-full left-0 mb-2 w-52 rounded-xl border p-1 shadow-xl z-50 flex flex-col gap-0.5 animate-slide-up backdrop-blur-md
+                      ${theme === "dark" ? "bg-zinc-950/98 border-zinc-900" : "bg-white/98 border-zinc-200"}`}
                     >
                       {[
-                        { val: 'ask', label: 'Ask', desc: 'Direct chat response, no clicks' },
-                        { val: 'quick', label: 'Quick', desc: 'Fast automation, up to 5 steps' },
-                        { val: 'focus', label: 'Focus', desc: 'Balanced agent loops, 15 steps' },
-                        { val: 'long', label: 'Long', desc: 'Complex reasoning, 35 steps' },
-                        { val: 'goal', label: 'Goal', desc: 'Loops until target achieved' }
-                      ].map((modeItem) => (
-                        <button
-                          key={modeItem.val}
-                          type="button"
-                          onClick={() => {
-                            setAgentMode(modeItem.val as any);
-                            setShowModeDropdown(false);
-                          }}
-                          className={`w-full text-left px-2.5 py-1.5 rounded-xl transition-all cursor-pointer flex flex-col items-start gap-0.5
-                            ${agentMode === modeItem.val
-                              ? theme === "dark"
-                                ? "bg-zinc-850 text-zinc-100"
-                                : "bg-zinc-100 text-zinc-900"
-                              : theme === "dark"
-                                ? "text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-200"
-                                : "text-zinc-650 hover:bg-zinc-50 hover:text-zinc-800"
-                            }`}
-                        >
-                          <span className="text-[10px] font-extrabold uppercase tracking-wider">{modeItem.label}</span>
-                          <span className={`text-[8.5px] leading-tight font-normal ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>{modeItem.desc}</span>
-                        </button>
-                      ))}
+                        { val: 'ask', label: 'Ask', desc: 'Conversational chat, no automation' },
+                        { val: 'quick', label: 'Quick', desc: 'Fast execution, up to 5 steps' },
+                        { val: 'focus', label: 'Focus', desc: 'Standard agent loops, 15 steps' },
+                        { val: 'long', label: 'Long', desc: 'Extended execution, 35 steps' },
+                        { val: 'goal', label: 'Goal', desc: 'Loops until goal is reached' }
+                      ].map((modeItem) => {
+                        const isSel = agentMode === modeItem.val;
+                        return (
+                          <button
+                            key={modeItem.val}
+                            type="button"
+                            onClick={() => {
+                              setAgentMode(modeItem.val as any);
+                              setShowModeDropdown(false);
+                            }}
+                            className={`w-full text-left px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer flex flex-col gap-0.5
+                              ${isSel
+                                ? theme === "dark"
+                                  ? "bg-zinc-900 text-zinc-200"
+                                  : "bg-zinc-100 text-zinc-800"
+                                : theme === "dark"
+                                  ? "text-zinc-450 hover:bg-zinc-900/50 hover:text-zinc-200"
+                                  : "text-zinc-650 hover:bg-zinc-50 hover:text-zinc-800"
+                              }`}
+                          >
+                            <div className="flex items-center justify-between w-full">
+                              <span className="text-[11px] font-medium">{modeItem.label}</span>
+                              {isSel && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
+                              )}
+                            </div>
+                            <span className={`text-[9px] leading-normal font-normal ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-450'}`}>
+                              {modeItem.desc}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </>
                 )}
