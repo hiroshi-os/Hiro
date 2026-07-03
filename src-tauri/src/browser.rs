@@ -13,13 +13,14 @@ async fn get_or_create_tab() -> Result<Arc<Tab>, String> {
         return Ok(tab.clone());
     }
 
-    // Launch chrome browser headlessly
+    // Launch chrome browser headfully (visible)
     let browser = Browser::new(
         LaunchOptions::default_builder()
-            .headless(true)
+            .headless(false)
+            .window_size(Some((1280, 800)))
             .build()
-            .map_err(|e| format!("Failed to build LaunchOptions: {}", e))?
-    ).map_err(|e| format!("Failed to launch headless chrome: {}", e))?;
+            .map_err(|e| format!("Failed to build headful launch config: {:?}", e))?
+    ).map_err(|e| format!("Browser launch failed: {:?}", e))?;
 
     let tab = browser.new_tab().map_err(|e| format!("Failed to create tab: {}", e))?;
     
