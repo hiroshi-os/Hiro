@@ -39,9 +39,9 @@ interface AgentStepPayload {
   mcp_tool_call: string | null;
 }
 
-function parseActionLabel(action: string | undefined, fallbackText: string): { label: string; param: string } {
+function parseActionLabel(action: string | undefined): { label: string; param: string } {
   if (!action) {
-    return { label: fallbackText || "Thinking", param: "" };
+    return { label: "Thinking", param: "" };
   }
   const clean = action.replace(/^Action:\s*/, "").trim();
   let label = "Interacting";
@@ -531,7 +531,7 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                           const isLastStep = stepIndex === msg.steps!.length - 1;
                           const isStepRunning = isLastStep && isProcessing && isLastMessage;
                           const shouldDefaultOpen = isLastStep && isLastMessage;
-                          const actionInfo = parseActionLabel(step.action, step.thought || "Thinking");
+                          const actionInfo = parseActionLabel(step.action);
 
                           return (
                             <details 
@@ -847,18 +847,47 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
               </button>
             </div>
 
-            {/* Circular Send Button */}
-            <button
-              id="send-btn-trigger"
-              type="submit"
-              disabled={!instruction.trim()}
-              className={`flex items-center justify-center w-7 h-7 rounded-full font-semibold transition-all shadow-sm cursor-pointer
-                ${theme === 'dark' 
-                  ? 'bg-zinc-250 text-zinc-950 hover:bg-zinc-100 disabled:bg-zinc-800/50 disabled:text-zinc-600' 
-                  : 'bg-zinc-950 text-white hover:bg-zinc-900 disabled:bg-zinc-100 disabled:text-zinc-300'}`}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 5v14"/></svg>
-            </button>
+            {/* Conditional Stop / Steer / Send Controls */}
+            <div className="flex items-center">
+              {isProcessing ? (
+                <>
+                  {instruction.trim() && (
+                    <button
+                      id="send-btn-trigger"
+                      type="submit"
+                      className={`flex items-center justify-center w-7 h-7 rounded-full font-semibold transition-all shadow-sm cursor-pointer mr-1.5
+                        ${theme === 'dark' 
+                          ? 'bg-emerald-500 text-zinc-950 hover:bg-emerald-400' 
+                          : 'bg-emerald-600 text-white hover:bg-emerald-550'}`}
+                      title="Steer Agent"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 5v14"/></svg>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={triggerManualPanic}
+                    className="flex items-center justify-center w-7 h-7 rounded-full bg-red-950/80 border border-red-800 text-red-300 hover:bg-red-900 transition-all shadow-sm cursor-pointer"
+                    title="Stop Agent Execution (Shift+ESC)"
+                  >
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+                  </button>
+                </>
+              ) : (
+                <button
+                  id="send-btn-trigger"
+                  type="submit"
+                  disabled={!instruction.trim()}
+                  className={`flex items-center justify-center w-7 h-7 rounded-full font-semibold transition-all shadow-sm cursor-pointer
+                    ${theme === 'dark' 
+                      ? 'bg-zinc-250 text-zinc-950 hover:bg-zinc-100 disabled:bg-zinc-800/50 disabled:text-zinc-600' 
+                      : 'bg-zinc-950 text-white hover:bg-zinc-900 disabled:bg-zinc-100 disabled:text-zinc-300'}`}
+                  title="Send Task"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 5v14"/></svg>
+                </button>
+              )}
+            </div>
           </div>
         </form>
       </div>
