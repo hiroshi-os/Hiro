@@ -416,7 +416,7 @@ scroll(direction='up' | 'down' | 'left' | 'right')
 hotkey(key='KEY_COMBINATION')
 
 ### Control
-finished()
+finished(message='FINAL_ANSWER_OR_SUMMARY') -> Call this when the task is complete. Always write the detailed final answer, summary, or report inside the message parameter so the user can read it.
 call_user()
 wait(seconds=NUM_SECONDS) or wait() (use when waiting for transitions, loading bars, animations, or server responses before taking the next screenshot. wait() defaults to a 2.5 seconds pause)
 
@@ -430,8 +430,8 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
 3. Do not combine selection and input actions into a single step.
 4. Text behavior inside inputs: When you execute type(content='...'), the text may visually overflow or look cut off/truncated in the next screenshot because the input field scrolls. This is NORMAL. If your action history shows you already typed the message, DO NOT try to select all, clear, delete, or retype it. Immediately move to hotkey(key='enter') to submit it.
 5. Interactive Focus Failures: If your action history shows you already attempted to click an input field or text box (e.g. at (517,848)) but the subsequent screenshot demonstrates that your text failed to register or typing didn't populate, DO NOT repeat the exact same coordinate points. The coordinate likely landed on unreactive padding or a border frame. You MUST modify your target position by trying coordinates a few pixels higher, lower, or to the left (e.g., offset by 15-20 pixels) to explicitly intercept the active text box center.
-6. FINAL ANSWER REQUIREMENT: When you have successfully completed the task (e.g. gathered information, extracted text, or compiled summaries) and are ready to stop, you MUST write the final answer, summary, or report directly inside the final Thought: field so the user can read it, then call finished() as your Action. Do not output a placeholder thought when finishing.
-7. EXTRACTION CONSTRAINT: If the user requests web page summaries, news articles, or target text data, you MUST explicitly execute browser_extract(selector='...') to pull the DOM content before calling finished(). Do not assume or assert that you have gathered the data unless you have run browser_extract() and received the extracted text payload feedback in your action history.`;
+6. General DOM Extraction: When automating tasks that require reading, summarizing, or analyzing text content from web pages, you MUST explicitly invoke browser_extract(selector='...') to capture the DOM string payload before finishing. Do not assert or act as if you have read element content unless you have run browser_extract() and received the returned string in your history.
+7. Final Output: When completing a task, always write the final answer, summary, or report inside the message parameter of finished(message='...') so the user receives it. Do not call finished() without providing a message when an output is expected.`;
 
     let maxStepsArg = 15;
     let modeGuideline = "";
