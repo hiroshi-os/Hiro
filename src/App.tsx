@@ -11,7 +11,6 @@ import {
   Minus, 
   Columns, 
   X, 
-  Send,
   Loader2,
   AlertTriangle,
   Play,
@@ -527,33 +526,79 @@ call_user()`;
       </div>
 
       {/* ─── Bottom Chat Input Area ─── */}
-      <form 
-        onSubmit={handleSend} 
-        className={`flex p-3 gap-2 border-t flex-shrink-0 transition-colors
-          ${theme === 'dark' ? 'bg-zinc-950/65 border-zinc-900' : 'bg-zinc-100/65 border-zinc-200'}`}
-      >
-        <input
-          type="text"
-          value={instruction}
-          onChange={(e) => setInstruction(e.target.value)}
-          placeholder={isProcessing ? 'Executing automated cycle steps...' : 'Describe a task...'}
-          disabled={isProcessing}
-          className={`flex-1 rounded-lg px-3.5 py-2 text-xs outline-none border transition-all duration-200
+      <div className={`p-3 border-t flex-shrink-0 transition-colors ${theme === 'dark' ? 'border-zinc-900/50 bg-zinc-950/10' : 'border-zinc-200 bg-zinc-100/20'}`}>
+        <form 
+          onSubmit={handleSend} 
+          className={`flex flex-col p-2.5 rounded-[24px] border shadow-sm transition-all duration-200
             ${theme === 'dark' 
-              ? 'bg-zinc-900/60 border-zinc-800/80 text-zinc-100 focus:border-zinc-600 focus:bg-zinc-900' 
-              : 'bg-white border-zinc-200/80 text-zinc-850 focus:border-zinc-400 focus:bg-white'}`}
-        />
-        <button
-          type="submit"
-          disabled={isProcessing || !instruction.trim()}
-          className={`flex items-center justify-center w-8 h-8 rounded-lg font-semibold transition-all shadow-sm cursor-pointer
-            ${theme === 'dark' 
-              ? 'bg-zinc-100 text-zinc-950 disabled:bg-zinc-800 disabled:text-zinc-600' 
-              : 'bg-zinc-900 text-zinc-100 disabled:bg-zinc-200 disabled:text-zinc-400'}`}
+              ? 'bg-zinc-900/40 border-zinc-800/80 text-zinc-100 focus-within:border-zinc-700/80' 
+              : 'bg-white border-zinc-200/80 text-zinc-850 focus-within:border-zinc-300/80'}`}
         >
-          <Send className="w-3.5 h-3.5" />
-        </button>
-      </form>
+          {/* Top Line: Input Field */}
+          <input
+            type="text"
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            placeholder={isProcessing ? 'Executing automated steps...' : 'Ask anything...'}
+            disabled={isProcessing}
+            className="w-full bg-transparent px-2.5 py-1.5 text-[13px] outline-none border-none placeholder-zinc-400 disabled:opacity-50"
+          />
+
+          {/* Bottom Line: Controls Bar */}
+          <div className="flex justify-between items-center mt-2 px-1">
+            {/* Quick Action Icons */}
+            <div className="flex items-center gap-1.5 pointer-events-auto">
+              <button 
+                type="button"
+                className={`p-1.5 rounded-full border text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer
+                  ${theme === 'dark' ? 'border-zinc-800/60 hover:bg-zinc-800/60' : 'border-zinc-200 hover:bg-zinc-50'}`}
+                title="Attach Source Files"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </button>
+              
+              <button 
+                type="button"
+                className={`p-1.5 rounded-full border text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer
+                  ${theme === 'dark' ? 'border-zinc-800/60 hover:bg-zinc-800/60' : 'border-zinc-200 hover:bg-zinc-50'}`}
+                title="Search Desktop / Web"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+              </button>
+              
+              <button 
+                type="button"
+                className={`p-1.5 rounded-full border text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer
+                  ${theme === 'dark' ? 'border-zinc-800/60 hover:bg-zinc-800/60' : 'border-zinc-200 hover:bg-zinc-50'}`}
+                title="Toggle Reasoning Context"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+              </button>
+              
+              <button 
+                type="button"
+                className={`p-1.5 rounded-full border text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer
+                  ${theme === 'dark' ? 'border-zinc-800/60 hover:bg-zinc-800/60' : 'border-zinc-200 hover:bg-zinc-50'}`}
+                title="More Actions"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+              </button>
+            </div>
+
+            {/* Circular Send Button */}
+            <button
+              type="submit"
+              disabled={isProcessing || !instruction.trim()}
+              className={`flex items-center justify-center w-7 h-7 rounded-full font-semibold transition-all shadow-sm cursor-pointer
+                ${theme === 'dark' 
+                  ? 'bg-zinc-250 text-zinc-950 hover:bg-zinc-100 disabled:bg-zinc-800/50 disabled:text-zinc-600' 
+                  : 'bg-zinc-950 text-white hover:bg-zinc-900 disabled:bg-zinc-100 disabled:text-zinc-300'}`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 5v14"/></svg>
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
