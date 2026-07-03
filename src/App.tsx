@@ -203,6 +203,7 @@ export default function App() {
   const [isPinned, setIsPinned] = useState(true);
   const [ghostMode, setGhostMode] = useState(true);
   const [agentMode, setAgentMode] = useState<'ask' | 'quick' | 'focus' | 'long' | 'goal'>('focus');
+  const [showModeDropdown, setShowModeDropdown] = useState(false);
   const [sessionFeedback, setSessionFeedback] = useState<
     "like" | "dislike" | null
   >(null);
@@ -1234,21 +1235,61 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                 </svg>
               </button>
 
-              <select
-                value={agentMode}
-                onChange={(e) => setAgentMode(e.target.value as any)}
-                className={`rounded-full px-2.5 py-0.5 text-[9px] font-extrabold outline-none border cursor-pointer uppercase tracking-wider select-none
-                  ${theme === "dark" 
-                    ? "bg-zinc-900 border-zinc-800 text-zinc-350 hover:text-zinc-150 hover:border-zinc-700" 
-                    : "bg-white border-zinc-200 text-zinc-550 hover:text-zinc-800 hover:border-zinc-300"}`}
-                title="Select agent execution mode"
-              >
-                <option value="ask">Ask</option>
-                <option value="quick">Quick</option>
-                <option value="focus">Focus</option>
-                <option value="long">Long</option>
-                <option value="goal">Goal</option>
-              </select>
+              <div className="relative inline-block">
+                <button
+                  type="button"
+                  onClick={() => setShowModeDropdown(!showModeDropdown)}
+                  className={`rounded-full px-2.5 py-0.5 text-[9px] font-extrabold outline-none border cursor-pointer uppercase tracking-wider select-none flex items-center gap-1.5 transition-all
+                    ${theme === "dark" 
+                      ? "bg-zinc-900 border-zinc-800 text-zinc-350 hover:text-zinc-150 hover:border-zinc-700" 
+                      : "bg-white border-zinc-200 text-zinc-550 hover:text-zinc-800 hover:border-zinc-300"}`}
+                  title="Select agent execution mode"
+                >
+                  <span>{agentMode}</span>
+                  <span className="text-[7px] opacity-60">▼</span>
+                </button>
+
+                {showModeDropdown && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-40" 
+                      onClick={() => setShowModeDropdown(false)} 
+                    />
+                    <div className={`absolute bottom-full left-0 mb-2 w-48 rounded-2xl border p-1.5 shadow-xl z-50 flex flex-col gap-0.5 animate-slide-up backdrop-blur-xl
+                      ${theme === "dark" ? "bg-zinc-950/95 border-zinc-850/80" : "bg-white/95 border-zinc-200"}`}
+                    >
+                      {[
+                        { val: 'ask', label: 'Ask', desc: 'Direct chat response, no clicks' },
+                        { val: 'quick', label: 'Quick', desc: 'Fast automation, up to 5 steps' },
+                        { val: 'focus', label: 'Focus', desc: 'Balanced agent loops, 15 steps' },
+                        { val: 'long', label: 'Long', desc: 'Complex reasoning, 35 steps' },
+                        { val: 'goal', label: 'Goal', desc: 'Loops until target achieved' }
+                      ].map((modeItem) => (
+                        <button
+                          key={modeItem.val}
+                          type="button"
+                          onClick={() => {
+                            setAgentMode(modeItem.val as any);
+                            setShowModeDropdown(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl transition-all cursor-pointer flex flex-col items-start gap-0.5
+                            ${agentMode === modeItem.val
+                              ? theme === "dark"
+                                ? "bg-zinc-850 text-zinc-100"
+                                : "bg-zinc-100 text-zinc-900"
+                              : theme === "dark"
+                                ? "text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-200"
+                                : "text-zinc-650 hover:bg-zinc-50 hover:text-zinc-800"
+                            }`}
+                        >
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider">{modeItem.label}</span>
+                          <span className={`text-[8.5px] leading-tight font-normal ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>{modeItem.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Conditional Stop / Steer / Send Controls */}
