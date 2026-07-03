@@ -1,4 +1,5 @@
 mod commands;
+mod grounding;
 
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
@@ -9,7 +10,6 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::capture_screen,
-            commands::execute_action,
             commands::start_agent_loop,
             commands::update_routing_settings,
             commands::trigger_panic

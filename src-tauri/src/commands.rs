@@ -10,8 +10,10 @@ use std::fs::OpenOptions;
 use image::{ImageEncoder, ExtendedColorType};
 
 use image::codecs::jpeg::JpegEncoder;
-use enigo::{Enigo, Mouse, Keyboard, Settings, Coordinate, Key};
+use enigo::{Enigo, Keyboard, Settings, Key};
 use is_elevated::is_elevated;
+
+use crate::grounding;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AgentStepEvent {
@@ -261,71 +263,95 @@ fn parse_key(key_str: &str) -> Result<Key, String> {
     }
 }
 
-// Coordinate Translation implementation within the native hardware injection node
+// Coordinate Translation implementation within the native hardware injection node.
+// Handles both coordinate-based (Enigo) and template-grounded (rustautogui) actions.
 pub fn execute_native_action(action: ParsedAction, monitor_width: u32, monitor_height: u32, scale_factor: f64) {
-    let settings = Settings::default();
-    let mut enigo = match Enigo::new(&settings) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
     match action {
+        // ─── Coordinate-based actions (VLM start_box output, Enigo driver) ───
         ParsedAction::Click { x, y } => {
-            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64 * scale_factor) as i32;
-            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64 * scale_factor) as i32;
-            
-            let _ = enigo.move_mouse(physical_x, physical_y, enigo::Coordinate::Abs);
-            std::thread::sleep(std::time::Duration::from_millis(150));
-            let _ = enigo.button(enigo::Button::Left, enigo::Direction::Click);
+            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64 * scale_factor) as u32;
+            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64 * scale_factor) as u32;
+            let _ = grounding::click_at(physical_x, physical_y);
         },
         ParsedAction::DoubleFloat { x, y } => {
-            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64 * scale_factor) as i32;
-            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64 * scale_factor) as i32;
-            
-            let _ = enigo.move_mouse(physical_x, physical_y, enigo::Coordinate::Abs);
-            std::thread::sleep(std::time::Duration::from_millis(150));
-            let _ = enigo.button(enigo::Button::Left, enigo::Direction::Click);
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            let _ = enigo.button(enigo::Button::Left, enigo::Direction::Click);
+            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64 * scale_factor) as u32;
+            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64 * scale_factor) as u32;
+            let _ = grounding::double_click_at(physical_x, physical_y);
         },
         ParsedAction::RightClick { x, y } => {
-            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64 * scale_factor) as i32;
-            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64 * scale_factor) as i32;
-            
-            let _ = enigo.move_mouse(physical_x, physical_y, enigo::Coordinate::Abs);
-            std::thread::sleep(std::time::Duration::from_millis(150));
-            let _ = enigo.button(enigo::Button::Right, enigo::Direction::Click);
+            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64 * scale_factor) as u32;
+            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64 * scale_factor) as u32;
+            let _ = grounding::right_click_at(physical_x, physical_y);
         },
         ParsedAction::Drag { x1, y1, x2, y2 } => {
-            let physical_x1 = ((x1 as f64 / 1000.0) * monitor_width as f64 * scale_factor) as i32;
-            let physical_y1 = ((y1 as f64 / 1000.0) * monitor_height as f64 * scale_factor) as i32;
-            let physical_x2 = ((x2 as f64 / 1000.0) * monitor_width as f64 * scale_factor) as i32;
-            let physical_y2 = ((y2 as f64 / 1000.0) * monitor_height as f64 * scale_factor) as i32;
-
-            let _ = enigo.move_mouse(physical_x1, physical_y1, enigo::Coordinate::Abs);
+            let px1 = ((x1 as f64 / 1000.0) * monitor_width as f64 * scale_factor) as u32;
+            let py1 = ((y1 as f64 / 1000.0) * monitor_height as f64 * scale_factor) as u32;
+            let px2 = ((x2 as f64 / 1000.0) * monitor_width as f64 * scale_factor) as u32;
+            let py2 = ((y2 as f64 / 1000.0) * monitor_height as f64 * scale_factor) as u32;
+            let _ = grounding::click_at(px1, py1);
             std::thread::sleep(std::time::Duration::from_millis(100));
-            let _ = enigo.button(enigo::Button::Left, enigo::Direction::Press);
-            std::thread::sleep(std::time::Duration::from_millis(150));
-            let _ = enigo.move_mouse(physical_x2, physical_y2, enigo::Coordinate::Abs);
-            std::thread::sleep(std::time::Duration::from_millis(150));
-            let _ = enigo.button(enigo::Button::Left, enigo::Direction::Release);
+            let _ = grounding::drag_to(px2, py2, 0.3);
         },
+
+        // ─── Template-grounded actions (rustautogui deterministic matching) ───
+        ParsedAction::ClickTarget { target } => {
+            let path = resolve_template_path(&target);
+            match grounding::find_and_click_file(&path, 0.90, None) {
+                Ok(Some((x, y))) => {
+                    eprintln!("[grounding] ClickTarget '{}' matched at ({}, {})", target, x, y);
+                },
+                Ok(None) => {
+                    eprintln!("[grounding] ClickTarget '{}' not found on screen", target);
+                },
+                Err(e) => {
+                    eprintln!("[grounding] ClickTarget '{}' error: {}", target, e);
+                },
+            }
+        },
+        ParsedAction::DoubleClickTarget { target } => {
+            let path = resolve_template_path(&target);
+            if let Ok(Some((x, y))) = grounding::find_template_from_file(&path, 0.90, None) {
+                let _ = grounding::double_click_at(x, y);
+            }
+        },
+        ParsedAction::RightClickTarget { target } => {
+            let path = resolve_template_path(&target);
+            if let Ok(Some((x, y))) = grounding::find_template_from_file(&path, 0.90, None) {
+                let _ = grounding::right_click_at(x, y);
+            }
+        },
+
+
+        // ─── Common actions (routed through grounding native drivers) ───
         ParsedAction::Type { content } => {
-            let _ = enigo.text(&content);
+            let _ = grounding::type_text(&content);
         },
         ParsedAction::Scroll { direction } => {
-            let axis = enigo::Axis::Vertical;
-            let steps = if direction == "down" { -2 } else { 2 };
-            let _ = enigo.scroll(steps, axis);
+            let _ = grounding::scroll(&direction);
         },
         ParsedAction::Hotkey { key } => {
-            if let Ok(mut kb) = SafeKeyboardContext::new(&settings) {
-                if let Ok(parsed_k) = parse_key(&key) {
-                    let _ = kb.press_key(parsed_k);
-                }
+            // Parse multi-key combos like "ctrl+shift+t"
+            let parts: Vec<&str> = key.split('+').collect();
+            match parts.len() {
+                1 => { let _ = grounding::key_press(parts[0]); },
+                2 => { let _ = grounding::hotkey(parts[0], parts[1], None); },
+                3 => { let _ = grounding::hotkey(parts[0], parts[1], Some(parts[2])); },
+                _ => { eprintln!("[grounding] Unsupported hotkey combo: {}", key); }
             }
         },
         _ => {}
+    }
+}
+
+/// Resolve a template alias to an absolute file path in the assets directory.
+/// Templates are stored in `src-tauri/assets/templates/<name>.png`.
+fn resolve_template_path(alias: &str) -> String {
+    let template_path = format!("assets/templates/{}", alias);
+    // If path doesn't have an extension, try .png
+    if std::path::Path::new(&template_path).extension().is_some() {
+        template_path
+    } else {
+        format!("{}.png", template_path)
     }
 }
 
@@ -333,10 +359,16 @@ pub fn execute_native_action(action: ParsedAction, monitor_width: u32, monitor_h
 use regex::Regex;
 
 lazy_static::lazy_static! {
+    // Coordinate-based patterns (start_box)
     static ref CLICK_RE: Regex = Regex::new(r"click\(start_box='\((\d+),(\d+)\)'\)").unwrap();
     static ref DOUBLE_CLICK_RE: Regex = Regex::new(r"left_double\(start_box='\((\d+),(\d+)\)'\)").unwrap();
     static ref RIGHT_CLICK_RE: Regex = Regex::new(r"right_single\(start_box='\((\d+),(\d+)\)'\)").unwrap();
     static ref DRAG_RE: Regex = Regex::new(r"drag\(start_box='\((\d+),(\d+)\)',\s*end_box='\((\d+),(\d+)\)'\)").unwrap();
+    // Template-grounded patterns (target='alias')
+    static ref CLICK_TARGET_RE: Regex = Regex::new(r"click\(target='(.*?)'\)").unwrap();
+    static ref DOUBLE_CLICK_TARGET_RE: Regex = Regex::new(r"left_double\(target='(.*?)'\)").unwrap();
+    static ref RIGHT_CLICK_TARGET_RE: Regex = Regex::new(r"right_single\(target='(.*?)'\)").unwrap();
+    // Common patterns
     static ref TYPE_RE: Regex = Regex::new(r"type\(content='(.*?)'\)").unwrap();
     static ref SCROLL_RE: Regex = Regex::new(r"scroll\(direction='(up|down|left|right)'\)").unwrap();
     static ref HOTKEY_RE: Regex = Regex::new(r"hotkey\(key='(.*?)'\)").unwrap();
@@ -346,10 +378,16 @@ lazy_static::lazy_static! {
 
 #[derive(Debug, Clone)]
 pub enum ParsedAction {
+    // Coordinate-based (VLM start_box output, 0–1000 grid)
     Click { x: u32, y: u32 },
     DoubleFloat { x: u32, y: u32 },
     RightClick { x: u32, y: u32 },
     Drag { x1: u32, y1: u32, x2: u32, y2: u32 },
+    // Template-grounded (deterministic visual search via rustautogui)
+    ClickTarget { target: String },
+    DoubleClickTarget { target: String },
+    RightClickTarget { target: String },
+    // Common
     Type { content: String },
     Scroll { direction: String },
     Hotkey { key: String },
@@ -396,6 +434,17 @@ pub fn parse_uitars_action(action_str: &str) -> Option<ParsedAction> {
 
     if let Some(caps) = HOTKEY_RE.captures(clean_str) {
         return Some(ParsedAction::Hotkey { key: caps[1].to_string() });
+    }
+
+    // Template-grounded target patterns
+    if let Some(caps) = CLICK_TARGET_RE.captures(clean_str) {
+        return Some(ParsedAction::ClickTarget { target: caps[1].to_string() });
+    }
+    if let Some(caps) = DOUBLE_CLICK_TARGET_RE.captures(clean_str) {
+        return Some(ParsedAction::DoubleClickTarget { target: caps[1].to_string() });
+    }
+    if let Some(caps) = RIGHT_CLICK_TARGET_RE.captures(clean_str) {
+        return Some(ParsedAction::RightClickTarget { target: caps[1].to_string() });
     }
 
     if let Some(caps) = CALL_TOOL_RE.captures(clean_str) {

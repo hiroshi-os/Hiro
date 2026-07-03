@@ -104,21 +104,32 @@ export default function App() {
       console.error('Failed to capture screen snapshot:', err);
     }
 
-    // Prompt Construction block matching UI-TARS behavioral dataset
+    // Prompt Construction block — Hybrid Architecture (Coordinates + Template Grounding)
     const systemPrompt = `You are a GUI agent. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task.
 
 ## Output Format
 Thought: ...
-Action: click(start_box='(x,y)') or other actions. Make sure to choose from the allowed Action Space.
+Action: click(start_box='(x,y)') or click(target='element_name') or other actions from the Action Space below.
 
 ## Action Space
+
+### Coordinate-Based Actions (use when you can identify exact position)
 click(start_box='(x,y)')
 left_double(start_box='(x,y)')
 right_single(start_box='(x,y)')
 drag(start_box='(x1,y1)', end_box='(x2,y2)')
+
+### Template-Grounded Actions (use when a known UI element/icon can be matched visually)
+click(target='element_name.png')
+left_double(target='element_name.png')
+right_single(target='element_name.png')
+
+### Input Actions
 type(content='TEXT_STRING')
 scroll(direction='up' | 'down' | 'left' | 'right')
 hotkey(key='KEY_COMBINATION')
+
+### Control
 finished()
 call_user()`;
 

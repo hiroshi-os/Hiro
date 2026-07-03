@@ -35,6 +35,10 @@ is_elevated = "0.1"
 chrono = "0.4"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
+regex = "1.10"
+rustautogui = "2.5.0"
+
+
 
 
 
