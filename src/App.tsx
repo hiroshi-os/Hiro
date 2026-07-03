@@ -807,18 +807,33 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                 <select
                   value={providerType}
                   onChange={(e) => {
-                    setProviderType(e.target.value);
-                    setEndpoint(
-                      e.target.value === "local"
-                        ? "http://localhost:11434"
-                        : "https://api.openai.com/v1",
-                    );
+                    const type = e.target.value;
+                    setProviderType(type);
+                    if (type === "local") {
+                      setEndpoint("http://localhost:11434");
+                      setModel("minimax-m3:cloud");
+                    } else if (type === "cloud") {
+                      setEndpoint("https://api.openai.com/v1");
+                      setModel("gpt-4o");
+                    } else if (type === "anthropic") {
+                      setEndpoint("https://api.anthropic.com");
+                      setModel("claude-3-5-sonnet-20241022");
+                    } else if (type === "groq") {
+                      setEndpoint("https://api.groq.com/openai/v1");
+                      setModel("llama-3.2-11b-vision-preview");
+                    } else if (type === "gemini") {
+                      setEndpoint("https://generativelanguage.googleapis.com");
+                      setModel("gemini-1.5-flash");
+                    }
                   }}
                   className={`rounded-lg px-2.5 py-1.5 text-xs outline-none border cursor-pointer
                     ${theme === "dark" ? "bg-zinc-900 border-zinc-800 text-zinc-100" : "bg-white border-zinc-200 text-zinc-800"}`}
                 >
                   <option value="local">Local (Ollama)</option>
                   <option value="cloud">Cloud (OpenAI / Compatible)</option>
+                  <option value="anthropic">Anthropic (Claude)</option>
+                  <option value="groq">Groq (Llama / Mistral)</option>
+                  <option value="gemini">Google (Gemini)</option>
                 </select>
               </div>
 
@@ -849,7 +864,7 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                 />
               </div>
 
-              {providerType === "cloud" && (
+              {providerType !== "local" && (
                 <div className="flex flex-col gap-1 col-span-2">
                   <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                     API Key Header

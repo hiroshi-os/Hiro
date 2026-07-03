@@ -62,6 +62,9 @@ pub async fn call_vlm(
     match provider_type {
         "local" => call_ollama(endpoint, model, messages).await,
         "cloud" => call_openai_compatible(endpoint, api_key, model, messages).await,
+        "anthropic" => call_anthropic(endpoint, api_key, model, messages).await,
+        "groq" => call_groq(endpoint, api_key, model, messages).await,
+        "gemini" => call_gemini(endpoint, api_key, model, messages).await,
         _ => Err(format!("Unknown provider type: {}", provider_type)),
     }
 }
@@ -209,4 +212,201 @@ async fn call_openai_compatible(
     parsed.choices.first()
         .map(|c| c.message.content.clone())
         .ok_or_else(|| "OpenAI response contained no choices".to_string())
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicResponse {
+    content: Vec<AnthropicContent>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicContent {
+    #[serde(rename = "type")]
+    content_type: String,
+    text: Option<String>,
+}
+
+async fn call_anthropic(
+    endpoint: &str,
+    api_key: Option<&str>,
+    model: &str,
+    messages: &[VlmMessage],
+) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let anthropic_messages: Vec<Value> = messages.iter().map(|m| {
+        let role = if m.role == "system" { "user" } else { &m.role };
+        if m.images.is_empty() {
+            serde_json::json!({
+                "role": role,
+                "content": m.content,
+            })
+        } else {
+            let mut content_parts = vec![
+                serde_json::json!({
+                    "type": "text",
+                    "text": m.content,
+                })
+            ];
+            for img in &m.images {
+                content_parts.push(serde_json::json!({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": img,
+                    }
+                }));
+            }
+            serde_json::json!({
+                "role": role,
+                "content": content_parts,
+            })
+        }
+    }).collect();
+
+    let base = endpoint.trim_end_matches('/');
+    let url = if base.contains("/v1/messages") {
+        base.to_string()
+    } else {
+        format!("{}/v1/messages", base)
+    };
+
+    let body = serde_json::json!({
+        "model": model,
+        "messages": anthropic_messages,
+        "max_tokens": 1024,
+    });
+
+    let mut req = client.post(&url)
+        .header("anthropic-version", "2023-06-01")
+        .json(&body);
+
+    if let Some(key) = api_key {
+        req = req.header("x-api-key", key);
+    }
+
+    let response = req.send().await
+        .map_err(|e| format!("Anthropic request failed: {}", e))?;
+
+    let status = response.status();
+    let response_text = response.text().await
+        .map_err(|e| format!("Failed to read Anthropic response: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!("Anthropic returned HTTP {}: {}", status, response_text));
+    }
+
+    let parsed: AnthropicResponse = serde_json::from_str(&response_text)
+        .map_err(|e| format!("Failed to parse Anthropic response JSON: {} — raw: {}", e, &response_text[..200.min(response_text.len())]))?;
+
+    parsed.content.iter()
+        .find(|c| c.content_type == "text" && c.text.is_some())
+        .and_then(|c| c.text.clone())
+        .ok_or_else(|| "Anthropic response contained no text content".to_string())
+}
+
+async fn call_groq(
+    endpoint: &str,
+    api_key: Option<&str>,
+    model: &str,
+    messages: &[VlmMessage],
+) -> Result<String, String> {
+    call_openai_compatible(endpoint, api_key, model, messages).await
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct GeminiResponse {
+    candidates: Option<Vec<GeminiCandidate>>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct GeminiCandidate {
+    content: Option<GeminiContent>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct GeminiContent {
+    parts: Vec<GeminiPart>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct GeminiPart {
+    text: Option<String>,
+}
+
+async fn call_gemini(
+    endpoint: &str,
+    api_key: Option<&str>,
+    model: &str,
+    messages: &[VlmMessage],
+) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let gemini_contents: Vec<Value> = messages.iter().map(|m| {
+        let role = if m.role == "assistant" { "model" } else { "user" };
+        let mut parts = vec![
+            serde_json::json!({
+                "text": m.content,
+            })
+        ];
+        for img in &m.images {
+            parts.push(serde_json::json!({
+                "inlineData": {
+                    "mimeType": "image/jpeg",
+                    "data": img,
+                }
+            }));
+        }
+        serde_json::json!({
+            "role": role,
+            "parts": parts,
+        })
+    }).collect();
+
+    let base = endpoint.trim_end_matches('/');
+    let key = api_key.unwrap_or("");
+    let url = if base.contains("/v1beta/models") {
+        format!("{}?key={}", base, key)
+    } else {
+        format!("{}/v1beta/models/{}:generateContent?key={}", base, model, key)
+    };
+
+    let body = serde_json::json!({
+        "contents": gemini_contents,
+    });
+
+    let response = client.post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Gemini request failed: {}", e))?;
+
+    let status = response.status();
+    let response_text = response.text().await
+        .map_err(|e| format!("Failed to read Gemini response: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!("Gemini returned HTTP {}: {}", status, response_text));
+    }
+
+    let parsed: GeminiResponse = serde_json::from_str(&response_text)
+        .map_err(|e| format!("Failed to parse Gemini response JSON: {} — raw: {}", e, &response_text[..200.min(response_text.len())]))?;
+
+    parsed.candidates
+        .and_then(|cands| cands.first().cloned())
+        .and_then(|cand| cand.content)
+        .and_then(|content| {
+            let texts: Vec<String> = content.parts.iter()
+                .filter_map(|p| p.text.clone())
+                .collect();
+            if texts.is_empty() { None } else { Some(texts.join("\n")) }
+        })
+        .ok_or_else(|| "Gemini response contained no text candidates".to_string())
 }
