@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 interface Message {
   id: string;
@@ -45,7 +45,7 @@ export default function App() {
   // Content protection + window setup on mount
   useEffect(() => {
     const setup = async () => {
-      const win = getCurrentWindow();
+      const win = getCurrentWebviewWindow();
       await win.setContentProtected(true);
     };
     setup();
@@ -209,9 +209,9 @@ call_user()`;
   };
 
   // Custom window controls
-  const minimizeWindow = () => getCurrentWindow().minimize();
+  const minimizeWindow = () => getCurrentWebviewWindow().minimize();
   const toggleMaximize = async () => {
-    const win = getCurrentWindow();
+    const win = getCurrentWebviewWindow();
     const maximized = await win.isMaximized();
     if (maximized) {
       await win.unmaximize();
@@ -219,12 +219,12 @@ call_user()`;
       await win.maximize();
     }
   };
-  const closeWindow = () => getCurrentWindow().close();
+  const closeWindow = () => getCurrentWebviewWindow().close();
 
   const handleMouseDown = async (e: React.MouseEvent) => {
     if (e.button === 0 && !(e.target as HTMLElement).closest('button')) {
       try {
-        await getCurrentWindow().startDragging();
+        await getCurrentWebviewWindow().startDragging();
       } catch (err) {
         console.error('Failed dragging window:', err);
       }
