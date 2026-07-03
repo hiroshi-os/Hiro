@@ -839,7 +839,13 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
                         if let Ok(Some(monitor)) = window.current_monitor() {
                             let size = monitor.size();
                             let scale_factor = monitor.scale_factor();
-                            execute_native_action(other_action, size.width, size.height, scale_factor);
+                            let width = size.width;
+                            let height = size.height;
+                            
+                            // PRODUCTION HARDENING: Move execution away from the main async task executor
+                            let _ = tokio::task::spawn_blocking(move || {
+                                execute_native_action(other_action, width, height, scale_factor);
+                            }).await;
                         }
                     }
                 }
