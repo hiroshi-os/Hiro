@@ -450,11 +450,12 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
 
     let browserPromptGuideline = "";
     if (browserMode) {
-      browserPromptGuideline = `\n\n## Headless Browser DOM Automation Space\nYou have spawned a background headless browser instance. You can bypass coordinate grounding/clicks on web elements by using these direct DOM-level actions:
-browser_goto(url='https://...') -> Navigate the browser to the specified URL.
-browser_click(selector='css_selector') -> Click the element matching the CSS selector.
-browser_type(selector='css_selector', text='text_to_type') -> Focus and type text into the field matching the CSS selector.
-browser_extract(selector='css_selector') -> Extract the inner text content from the target element.
+      browserPromptGuideline = `\n\n## Headless Browser DOM Automation Space
+You have spawned a visible headful browser instance. You can bypass coordinate grounding/clicks on web elements by using these direct DOM-level actions:
+browser_goto(url='https://...')
+browser_click(selector='css_selector')
+browser_type(selector='css_selector', text='text_to_type')
+browser_extract(selector='css_selector') -> You MUST output exactly this string line inside the Action block to extract text from matched selectors. For example: Action: browser_extract(selector='.titleline a')
 
 Guidelines for Browser Mode:
 1. Always prefer browser_* DOM actions over coordinate-based mouse actions (click, type) when navigating websites or filling forms if browser mode is active.

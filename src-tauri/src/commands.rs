@@ -466,10 +466,10 @@ lazy_static::lazy_static! {
     static ref MACRO_BLOCK_RE: Regex = Regex::new(r"macro_block\(\s*\[([\s\S]*?)\]\s*\)").unwrap();
     static ref ACTION_SPLIT_RE: Regex = Regex::new(r"\),\s*").unwrap();
     // Headless Browser DOM Actions
-    static ref BROWSER_GOTO_RE: Regex = Regex::new(r"browser_goto\(url='(.*?)'\)").unwrap();
-    static ref BROWSER_CLICK_RE: Regex = Regex::new(r"browser_click\(selector='(.*?)'\)").unwrap();
-    static ref BROWSER_TYPE_RE: Regex = Regex::new(r"browser_type\(selector='(.*?)',\s*text='(.*?)'\)").unwrap();
-    static ref BROWSER_EXTRACT_RE: Regex = Regex::new(r"browser_extract\(selector='(.*?)'\)").unwrap();
+    static ref BROWSER_GOTO_RE: Regex = Regex::new(r#"browser_goto\(url=['"](.*?)['"]\)"#).unwrap();
+    static ref BROWSER_CLICK_RE: Regex = Regex::new(r#"browser_click\(selector=['"](.*?)['"]\)"#).unwrap();
+    static ref BROWSER_TYPE_RE: Regex = Regex::new(r#"browser_type\(selector=['"](.*?)['"],\s*text=['"](.*?)['"]\)"#).unwrap();
+    static ref BROWSER_EXTRACT_RE: Regex = Regex::new(r#"browser_extract\(selector=['"](.*?)['"]\)"#).unwrap();
 }
 
 #[derive(Debug, Clone)]
