@@ -36,7 +36,7 @@ export default function App() {
   const [providerType, setProviderType] = useState('local');
   const [endpoint, setEndpoint] = useState('http://localhost:11434');
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('ui-tars');
+  const [model, setModel] = useState('minimax-m3:cloud');
   const [opacity, setOpacity] = useState(95);
   const [maxSteps, setMaxSteps] = useState(15);
 

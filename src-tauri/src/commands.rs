@@ -52,7 +52,7 @@ pub struct ProviderSettings {
 }
 
 fn default_model() -> String {
-    "ui-tars".to_string()
+    "minimax-m3:cloud".to_string()
 }
 
 use tokio_util::sync::CancellationToken;
@@ -73,7 +73,7 @@ lazy_static::lazy_static! {
             provider_type: "local".to_string(),
             endpoint: "http://localhost:11434".to_string(),
             api_key: None,
-            model: "ui-tars".to_string(),
+            model: "minimax-m3:cloud".to_string(),
         },
         cancel_token: None,
     }));
