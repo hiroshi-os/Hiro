@@ -221,6 +221,16 @@ call_user()`;
   };
   const closeWindow = () => getCurrentWindow().close();
 
+  const handleMouseDown = async (e: React.MouseEvent) => {
+    if (e.button === 0 && !(e.target as HTMLElement).closest('button')) {
+      try {
+        await getCurrentWindow().startDragging();
+      } catch (err) {
+        console.error('Failed dragging window:', err);
+      }
+    }
+  };
+
   const c = theme === 'dark' ? darkColors : lightColors;
   const bg = theme === 'dark'
     ? `rgba(12, 12, 12, ${opacity / 100})`
@@ -230,11 +240,14 @@ call_user()`;
     <div style={{ ...s.shell, background: bg, color: c.text, borderColor: c.border }}>
 
       {/* ─── Custom Titlebar ─── */}
-      <div data-tauri-drag-region="true" style={{ ...s.titlebar, borderBottom: `1px solid ${c.border}` }}>
-        <div data-tauri-drag-region="true" style={s.titleLeft}>
+      <div 
+        onMouseDown={handleMouseDown}
+        style={{ ...s.titlebar, borderBottom: `1px solid ${c.border}` }}
+      >
+        <div style={s.titleLeft}>
           <div style={{ ...s.dot, background: isProcessing ? '#22c55e' : c.accent, boxShadow: isProcessing ? '0 0 8px #22c55e88' : 'none' }} />
-          <span data-tauri-drag-region="true" style={{ ...s.titleText, color: c.text }}>Hiro</span>
-          <span data-tauri-drag-region="true" style={{ ...s.titleSub, color: c.sub }}>v0.1</span>
+          <span style={{ ...s.titleText, color: c.text }}>Hiro</span>
+          <span style={{ ...s.titleSub, color: c.sub }}>v0.1</span>
         </div>
         <div style={s.titleRight}>
           <button onClick={minimizeWindow} style={{ ...s.winBtn, color: c.sub }} title="Minimize">
