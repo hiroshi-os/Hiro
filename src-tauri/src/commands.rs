@@ -14,6 +14,7 @@ use enigo::{Enigo, Keyboard, Settings, Key};
 use is_elevated::is_elevated;
 
 use crate::grounding;
+use crate::vlm::{self, VlmMessage};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AgentStepEvent {
@@ -46,6 +47,12 @@ pub struct ProviderSettings {
     pub provider_type: String, // "local" or "cloud"
     pub endpoint: String,
     pub api_key: Option<String>,
+    #[serde(default = "default_model")]
+    pub model: String,
+}
+
+fn default_model() -> String {
+    "ui-tars".to_string()
 }
 
 use tokio_util::sync::CancellationToken;
@@ -64,8 +71,9 @@ lazy_static::lazy_static! {
         history: Vec::new(),
         settings: ProviderSettings {
             provider_type: "local".to_string(),
-            endpoint: "http://localhost:11434/api/generate".to_string(),
+            endpoint: "http://localhost:11434".to_string(),
             api_key: None,
+            model: "ui-tars".to_string(),
         },
         cancel_token: None,
     }));
@@ -519,18 +527,16 @@ pub async fn trigger_panic(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt: String) -> Result<(), String> {
 
-
-
     if is_admin_or_root() {
         return Err("Execution Rejected: Hiro cannot be run under elevated administrator or root privileges.".into());
     }
 
-
     let state_clone = STATE.clone();
     let token = CancellationToken::new();
     let token_clone = token.clone();
-    let _ = system_prompt;
 
+    // Read settings before spawning the background task
+    let settings_snapshot;
     {
         let mut state = state_clone.lock().await;
         if state.is_running {
@@ -538,33 +544,30 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
         }
         state.is_running = true;
         state.cancel_token = Some(token);
-        state.history.clear(); // Reset history turns for the new instruction session
+        state.history.clear(); // Reset history for new instruction session
+        settings_snapshot = state.settings.clone();
     }
+
+    let max_steps: u32 = 15;
 
     tokio::spawn(async move {
         let _ = app.emit("agent-step", AgentStepEvent {
             status: "started".into(),
-            thought: Some("Analyzing desktop state...".into()),
+            thought: Some(format!("Starting task: {}", &instruction)),
             action: None,
             mcp_tool_call: None,
         });
 
-        // 6-step loop lifecycle simulation
-        for step in 1..=6 {
-            if token_clone.is_cancelled() {
-                break;
-            }
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        for step in 1..=max_steps {
             if token_clone.is_cancelled() {
                 break;
             }
 
-
-            // 1. Capture primary display screen frame buffer (T0)
-            let mut screenshot_base64 = "".to_string();
+            // 1. Capture primary display screen frame buffer
+            let mut screenshot_base64 = String::new();
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.hide();
-                std::thread::sleep(std::time::Duration::from_millis(150));
+                std::thread::sleep(std::time::Duration::from_millis(200));
                 if let Ok(data) = capture_screen().await {
                     screenshot_base64 = data;
                 }
@@ -575,53 +578,148 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
                 }
             }
 
+            if token_clone.is_cancelled() {
+                break;
+            }
 
-            // 2. Perform Visual Context Memory Culling on previous history states
+            // 2. Build multi-turn VLM conversation from history
+            let mut vlm_messages: Vec<VlmMessage> = Vec::new();
+
+            // System prompt (no image)
+            vlm_messages.push(VlmMessage {
+                role: "system".to_string(),
+                content: system_prompt.clone(),
+                images: vec![],
+            });
+
+            // Inject historical turns as assistant/user pairs
             {
-                let mut state = state_clone.lock().await;
-                let history_len = state.history.len();
-                for i in 0..history_len {
-                    let steps_back = history_len - i;
-                    if steps_back >= 4 {
-                        // Episodic Visual Stripping: strip images entirely for T-4 and older
-                        state.history[i].screenshot = None;
-                    } else if steps_back >= 1 {
-                        // Immediate History Downsampling: compress screenshots for T-1 to T-3
-                        if let Some(ref img_src) = state.history[i].screenshot {
-                            if img_src.len() > 100000 { // Downsample only if not already resized
-                                if let Ok(downsampled) = downsample_screenshot(img_src) {
-                                    state.history[i].screenshot = Some(downsampled);
-                                }
-                            }
-                        }
+                let state = state_clone.lock().await;
+                for turn in state.history.iter() {
+                    // Previous observation (user role with screenshot)
+                    let obs_text = format!(
+                        "Step {} completed.\nPrevious Thought: {}\nPrevious Action: {}\nHere is the current screenshot after that action.",
+                        turn.step, turn.thought, turn.action
+                    );
+                    let obs_images = match &turn.screenshot {
+                        Some(img) if !img.is_empty() => vec![img.clone()],
+                        _ => vec![],
+                    };
+                    vlm_messages.push(VlmMessage {
+                        role: "user".to_string(),
+                        content: obs_text,
+                        images: obs_images,
+                    });
+
+                    // Previous model response (assistant role)
+                    vlm_messages.push(VlmMessage {
+                        role: "assistant".to_string(),
+                        content: format!("Thought: {}\nAction: {}", turn.thought, turn.action),
+                        images: vec![],
+                    });
+                }
+            }
+
+            // Current turn: user message with current screenshot + task instruction
+            let current_user_content = if step == 1 {
+                format!("Task: {}\n\nHere is the current screenshot of the desktop. What is the next action?", &instruction)
+            } else {
+                format!("Task: {}\n\nHere is the updated screenshot after your previous action. What is the next action?", &instruction)
+            };
+
+            vlm_messages.push(VlmMessage {
+                role: "user".to_string(),
+                content: current_user_content,
+                images: if screenshot_base64.is_empty() { vec![] } else { vec![screenshot_base64.clone()] },
+            });
+
+            // 3. Perform Visual Context Memory Culling on history images
+            //    Strip images from messages older than T-3 to reduce payload size
+            let total_msgs = vlm_messages.len();
+            if total_msgs > 8 {
+                // Keep images only in the last 6 messages (3 user+assistant pairs)
+                let cutoff = total_msgs.saturating_sub(7);
+                for msg in vlm_messages.iter_mut().take(cutoff) {
+                    msg.images.clear();
+                }
+            }
+
+            // 4. Call the VLM
+            let _ = app.emit("agent-step", AgentStepEvent {
+                status: "running".into(),
+                thought: Some(format!("Step {}: Sending screenshot to VLM...", step)),
+                action: None,
+                mcp_tool_call: None,
+            });
+
+            let vlm_result = vlm::call_vlm(
+                &settings_snapshot.provider_type,
+                &settings_snapshot.endpoint,
+                settings_snapshot.api_key.as_deref(),
+                &settings_snapshot.model,
+                &vlm_messages,
+            ).await;
+
+            let raw_vlm_text = match vlm_result {
+                Ok(text) => {
+                    eprintln!("[agent] Step {} VLM response:\n{}", step, &text);
+                    text
+                },
+                Err(e) => {
+                    eprintln!("[agent] Step {} VLM call failed: {}", step, &e);
+                    let _ = app.emit("agent-step", AgentStepEvent {
+                        status: "aborted".into(),
+                        thought: Some(format!("VLM inference failed: {}", e)),
+                        action: None,
+                        mcp_tool_call: None,
+                    });
+                    break;
+                }
+            };
+
+            if token_clone.is_cancelled() {
+                break;
+            }
+
+            // 5. Parse Thought + Action from VLM response
+            let mut current_thought = String::new();
+            let mut parsed_action = None;
+            let mut raw_act_line = String::new();
+
+            for line in raw_vlm_text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("Thought:") {
+                    current_thought = trimmed.strip_prefix("Thought:").unwrap().trim().to_string();
+                } else if trimmed.starts_with("Action:") {
+                    let action_part = trimmed.strip_prefix("Action:").unwrap().trim();
+                    if let Some(parsed) = parse_uitars_action(action_part) {
+                        parsed_action = Some(parsed);
+                        raw_act_line = trimmed.to_string();
                     }
                 }
             }
 
-            // Simulating execution trace conforming to start_box training coordinates
-            let raw_vlm_text = if step == 1 {
-                "Thought: Executing direct MCP write verification.\nAction: call_tool(name='write_file', path='src-tauri/hiro_audit.log', content='test')".to_string()
-            } else if step < 6 {
-                format!("Thought: Locating targeted interface element.\nAction: click(start_box='(400,{})')", step * 100)
-            } else {
-                "Thought: Operation accomplished.\nAction: finished()".to_string()
-            };
-
-
-            let mut current_thought = "".to_string();
-            let mut parsed_action = None;
-            let mut raw_act_line = "".to_string();
-
-            for line in raw_vlm_text.lines() {
-                if line.trim().starts_with("Thought:") {
-                    current_thought = line.trim().strip_prefix("Thought:").unwrap().trim().to_string();
-                } else if line.trim().starts_with("Action:") {
-                    let action_part = line.trim().strip_prefix("Action:").unwrap().trim();
-                    if let Some(parsed) = parse_uitars_action(action_part) {
-                        parsed_action = Some(parsed);
-                        raw_act_line = line.trim().to_string();
-                    }
+            // If VLM returned text but we couldn't parse an action, log and continue
+            if parsed_action.is_none() {
+                eprintln!("[agent] Step {}: No parseable action in VLM response", step);
+                let _ = app.emit("agent-step", AgentStepEvent {
+                    status: "running".into(),
+                    thought: Some(format!("Step {}: VLM response unparseable — retrying...\nRaw: {}", step, &raw_vlm_text[..200.min(raw_vlm_text.len())])),
+                    action: None,
+                    mcp_tool_call: None,
+                });
+                // Push a failed turn to history so VLM sees the failure context
+                {
+                    let mut state = state_clone.lock().await;
+                    state.history.push(HistoricalTurn {
+                        step,
+                        action: "parse_failure".to_string(),
+                        thought: format!("Could not parse action from: {}", &raw_vlm_text[..100.min(raw_vlm_text.len())]),
+                        screenshot: Some(screenshot_base64),
+                    });
                 }
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                continue;
             }
 
             // Write to the append-only audit JSONL file
@@ -634,67 +732,117 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
                 action: raw_act_line.clone(),
             });
 
-            // Handle the parsed action routing
-            if let Some(act) = parsed_action {
-                match act {
-                    ParsedAction::CallTool { name, args } => {
-                        let _ = app.emit("agent-step", AgentStepEvent {
-                            status: "running".into(),
-                            thought: Some(current_thought.clone()),
-                            action: Some(raw_act_line.clone()),
-                            mcp_tool_call: Some(format!("Executing MCP tool call: {}...", name)),
+            // 6. Handle the parsed action routing
+            let act = parsed_action.unwrap();
+            match act {
+                ParsedAction::CallTool { ref name, ref args } => {
+                    let _ = app.emit("agent-step", AgentStepEvent {
+                        status: "running".into(),
+                        thought: Some(current_thought.clone()),
+                        action: Some(raw_act_line.clone()),
+                        mcp_tool_call: Some(format!("Executing MCP tool: {}...", name)),
+                    });
+                    let _mcp_res = execute_mcp_tool(name, args);
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                },
+                ParsedAction::Stop => {
+                    let _ = app.emit("agent-step", AgentStepEvent {
+                        status: "completed".into(),
+                        thought: Some(current_thought.clone()),
+                        action: Some(raw_act_line.clone()),
+                        mcp_tool_call: None,
+                    });
+                    // Push final turn to history
+                    {
+                        let mut state = state_clone.lock().await;
+                        state.history.push(HistoricalTurn {
+                            step,
+                            action: raw_act_line.clone(),
+                            thought: current_thought.clone(),
+                            screenshot: None,
                         });
-                        let _mcp_res = execute_mcp_tool(&name, &args);
-                        std::thread::sleep(std::time::Duration::from_millis(300));
-                    },
-                    ParsedAction::Stop => {
-                        let _ = app.emit("agent-step", AgentStepEvent {
-                            status: "completed".into(),
-                            thought: Some(current_thought.clone()),
-                            action: Some(raw_act_line.clone()),
-                            mcp_tool_call: None,
-                        });
-                        break;
-                    },
-                    other_action => {
-                        let _ = app.emit("agent-step", AgentStepEvent {
-                            status: "running".into(),
-                            thought: Some(current_thought.clone()),
-                            action: Some(raw_act_line.clone()),
-                            mcp_tool_call: None,
-                        });
-                        
-                        // Execute native OS action (mapping 1000-based coordinates)
-                        if let Some(window) = app.get_webview_window("main") {
-                            if let Ok(Some(monitor)) = window.current_monitor() {
-                                let size = monitor.size();
-                                let scale_factor = monitor.scale_factor();
-                                execute_native_action(other_action, size.width, size.height, scale_factor);
+                    }
+                    break;
+                },
+                other_action => {
+                    let _ = app.emit("agent-step", AgentStepEvent {
+                        status: "running".into(),
+                        thought: Some(current_thought.clone()),
+                        action: Some(raw_act_line.clone()),
+                        mcp_tool_call: None,
+                    });
+
+                    // Execute native OS action via grounding layer
+                    if let Some(window) = app.get_webview_window("main") {
+                        if let Ok(Some(monitor)) = window.current_monitor() {
+                            let size = monitor.size();
+                            let scale_factor = monitor.scale_factor();
+                            execute_native_action(other_action, size.width, size.height, scale_factor);
+                        }
+                    }
+                }
+            }
+
+            // Push current turn to visual memory history stack
+            {
+                let mut state = state_clone.lock().await;
+                state.history.push(HistoricalTurn {
+                    step,
+                    action: raw_act_line.clone(),
+                    thought: current_thought.clone(),
+                    screenshot: Some(screenshot_base64),
+                });
+
+                // Downsample older screenshots to reduce memory pressure
+                let history_len = state.history.len();
+                for i in 0..history_len {
+                    let steps_back = history_len - i;
+                    if steps_back >= 4 {
+                        state.history[i].screenshot = None;
+                    } else if steps_back >= 2 {
+                        if let Some(ref img_src) = state.history[i].screenshot {
+                            if img_src.len() > 100000 {
+                                if let Ok(downsampled) = downsample_screenshot(img_src) {
+                                    state.history[i].screenshot = Some(downsampled);
+                                }
                             }
                         }
                     }
                 }
-
-                // Push current turn state to visual memory history stack
-                {
-                    let mut state = state_clone.lock().await;
-                    state.history.push(HistoricalTurn {
-                        step,
-                        action: raw_act_line.clone(),
-                        thought: current_thought.clone(),
-                        screenshot: Some(screenshot_base64),
-                    });
-                }
             }
 
-            // Cooldown delay
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            // Cooldown between steps
+            tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
         }
 
+        // Mark loop as finished
         let mut state = state_clone.lock().await;
         state.is_running = false;
+
+        // If we exhausted max steps without finishing, notify the UI
+        if state.history.last().map(|t| t.action.as_str()) != Some("Action: finished()") {
+            let _ = app.emit("agent-step", AgentStepEvent {
+                status: "completed".into(),
+                thought: Some(format!("Reached maximum step limit ({}). Task may be incomplete.", max_steps)),
+                action: None,
+                mcp_tool_call: None,
+            });
+        }
     });
 
+    Ok(())
+}
+
+/// Clear the agent session history and reset state.
+/// Call this before starting a completely new task.
+#[tauri::command]
+pub async fn clear_session() -> Result<(), String> {
+    let mut state = STATE.lock().await;
+    state.history.clear();
+    if let Some(token) = state.cancel_token.take() {
+        token.cancel();
+    }
+    state.is_running = false;
     Ok(())
 }
 

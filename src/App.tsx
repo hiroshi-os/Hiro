@@ -37,8 +37,9 @@ export default function App() {
   // Settings Panel Config
   const [showSettings, setShowSettings] = useState(false);
   const [providerType, setProviderType] = useState('local');
-  const [endpoint, setEndpoint] = useState('http://localhost:11434/api/generate');
+  const [endpoint, setEndpoint] = useState('http://localhost:11434');
   const [apiKey, setApiKey] = useState('');
+  const [model, setModel] = useState('ui-tars');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -170,6 +171,7 @@ call_user()`;
           provider_type: providerType,
           endpoint: endpoint,
           api_key: apiKey || null,
+          model: model,
         }
       });
       setShowSettings(false);
@@ -183,6 +185,21 @@ call_user()`;
       await invoke('trigger_panic');
     } catch (err) {
       console.error('Panic trigger call failed:', err);
+    }
+  };
+
+  const clearSession = async () => {
+    try {
+      await invoke('clear_session');
+      setMessages([{
+        id: 'reset-' + Date.now(),
+        sender: 'hiro',
+        text: 'Session cleared. Ready for a new task.',
+      }]);
+      setIsProcessing(false);
+      setErrorMsg(null);
+    } catch (err) {
+      console.error('Failed to clear session:', err);
     }
   };
 
@@ -213,6 +230,12 @@ call_user()`;
               Panic Stop (Shift+ESC)
             </button>
           )}
+          <button 
+            style={{ ...styles.themeBtn, color: currentColors.text, border: `1px solid ${currentColors.border}`, background: currentColors.buttonBg, marginLeft: 4 }} 
+            onClick={clearSession}
+          >
+            New Session
+          </button>
         </div>
       </header>
 
@@ -232,9 +255,9 @@ call_user()`;
               onChange={(e) => {
                 setProviderType(e.target.value);
                 if (e.target.value === 'local') {
-                  setEndpoint('http://localhost:11434/api/generate');
+                  setEndpoint('http://localhost:11434');
                 } else {
-                  setEndpoint('https://api.openai.com/v1/chat/completions');
+                  setEndpoint('https://api.openai.com/v1');
                 }
               }}
               style={{ ...styles.select, background: currentColors.inputBg, color: currentColors.text, border: `1px solid ${currentColors.border}` }}
@@ -263,6 +286,16 @@ call_user()`;
               />
             </div>
           )}
+          <div style={styles.formGroup}>
+            <label style={{ ...styles.label, color: currentColors.subtext }}>Model Name</label>
+            <input
+              type="text"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="e.g. ui-tars, gpt-4o, qwen2.5-vl"
+              style={{ ...styles.input, background: currentColors.inputBg, color: currentColors.text, border: `1px solid ${currentColors.border}` }}
+            />
+          </div>
           <div style={styles.modalActions}>
             <button onClick={saveSettings} style={{ ...styles.saveBtn, background: currentColors.accent, color: theme === 'dark' ? '#000' : '#fff' }}>Save Settings</button>
             <button onClick={() => setShowSettings(false)} style={{ ...styles.cancelBtn, color: currentColors.subtext, border: `1px solid ${currentColors.border}` }}>Cancel</button>

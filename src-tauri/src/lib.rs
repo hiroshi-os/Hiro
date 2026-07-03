@@ -1,5 +1,6 @@
 mod commands;
 mod grounding;
+mod vlm;
 
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
@@ -12,7 +13,8 @@ pub fn run() {
             commands::capture_screen,
             commands::start_agent_loop,
             commands::update_routing_settings,
-            commands::trigger_panic
+            commands::trigger_panic,
+            commands::clear_session
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
