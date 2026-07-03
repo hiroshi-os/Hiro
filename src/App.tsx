@@ -341,11 +341,12 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
     flexDirection: 'column',
-    width: '100%',
-    height: '100%',
+    width: '100vw',
+    height: '100vh',
     boxSizing: 'border-box',
     fontFamily: 'system-ui, -apple-system, sans-serif',
   },
+
   header: {
     display: 'flex',
     justifyContent: 'space-between',
