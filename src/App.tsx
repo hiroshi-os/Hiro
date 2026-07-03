@@ -25,11 +25,14 @@ export default function App() {
     {
       id: 'welcome',
       sender: 'hiro',
-      text: 'Welcome! I am Hiro, your visual-agent desktop automation platform. Upgraded to Phase 3 Production specifications with Hybrid MCP execution, visual memory decay culling, and global key Panic Stop protection.',
+      text: 'Welcome! I am Hiro, your visual-agent desktop automation platform. Configured with solid monochrome theme options.',
     },
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  // Theme Toggle: 'dark' or 'light'
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   
   // Settings Panel Config
   const [showSettings, setShowSettings] = useState(false);
@@ -44,7 +47,6 @@ export default function App() {
   }, [messages]);
 
   useEffect(() => {
-    // Listen for real-time agent updates emitted from Rust background thread
     const unlisten = listen<AgentStepPayload>('agent-step', (event) => {
       const payload = event.payload;
       
@@ -95,7 +97,6 @@ export default function App() {
     const userText = instruction;
     setInstruction('');
 
-    // Capture screen state snapshot (T0) before starting loop
     let screenshotBase64 = '';
     try {
       screenshotBase64 = await invoke<string>('capture_screen');
@@ -154,15 +155,26 @@ export default function App() {
     }
   };
 
+  const currentColors = theme === 'dark' ? darkColors : lightColors;
+
   return (
-    <div style={styles.container}>
-      <header style={styles.header}>
+    <div style={{ ...styles.container, background: currentColors.background, color: currentColors.text }}>
+      <header style={{ ...styles.header, borderBottom: `1px solid ${currentColors.border}`, background: currentColors.headerBg }}>
         <div style={styles.logoContainer}>
-          <div style={styles.pulse} />
-          <span style={styles.title}>Hiro Desktop</span>
+          <div style={{ ...styles.indicator, background: currentColors.accent }} />
+          <span style={{ ...styles.title, color: currentColors.text }}>Hiro Desktop</span>
         </div>
         <div style={styles.systemBadge}>
-          <button style={styles.settingsBtn} onClick={() => setShowSettings(!showSettings)}>
+          <button 
+            style={{ ...styles.themeBtn, color: currentColors.text, border: `1px solid ${currentColors.border}`, background: currentColors.buttonBg }} 
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          >
+            {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+          </button>
+          <button 
+            style={{ ...styles.settingsBtn, color: currentColors.text, border: `1px solid ${currentColors.border}`, background: currentColors.buttonBg }} 
+            onClick={() => setShowSettings(!showSettings)}
+          >
             Settings
           </button>
           {isProcessing && (
@@ -170,7 +182,6 @@ export default function App() {
               Panic Stop (Shift+ESC)
             </button>
           )}
-          <span style={styles.badgeText}>Memory Tiering: ON</span>
         </div>
       </header>
 
@@ -181,10 +192,10 @@ export default function App() {
       )}
 
       {showSettings && (
-        <div style={styles.settingsModal}>
-          <h3 style={styles.modalTitle}>Provider Profile Routing</h3>
+        <div style={{ ...styles.settingsModal, background: currentColors.headerBg, borderBottom: `1px solid ${currentColors.border}` }}>
+          <h3 style={{ ...styles.modalTitle, color: currentColors.text }}>Provider Profile Routing</h3>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Inference Source</label>
+            <label style={{ ...styles.label, color: currentColors.subtext }}>Inference Source</label>
             <select
               value={providerType}
               onChange={(e) => {
@@ -195,35 +206,35 @@ export default function App() {
                   setEndpoint('https://api.openai.com/v1/chat/completions');
                 }
               }}
-              style={styles.select}
+              style={{ ...styles.select, background: currentColors.inputBg, color: currentColors.text, border: `1px solid ${currentColors.border}` }}
             >
               <option value="local">Local Host (Ollama / vLLM)</option>
               <option value="cloud">Cloud API Provider (OpenAI/Anthropic)</option>
             </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Endpoint URL</label>
+            <label style={{ ...styles.label, color: currentColors.subtext }}>Endpoint URL</label>
             <input
               type="text"
               value={endpoint}
               onChange={(e) => setEndpoint(e.target.value)}
-              style={styles.input}
+              style={{ ...styles.input, background: currentColors.inputBg, color: currentColors.text, border: `1px solid ${currentColors.border}` }}
             />
           </div>
           {providerType === 'cloud' && (
             <div style={styles.formGroup}>
-              <label style={styles.label}>API Key Header Token</label>
+              <label style={{ ...styles.label, color: currentColors.subtext }}>API Key Header Token</label>
               <input
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                style={styles.input}
+                style={{ ...styles.input, background: currentColors.inputBg, color: currentColors.text, border: `1px solid ${currentColors.border}` }}
               />
             </div>
           )}
           <div style={styles.modalActions}>
-            <button onClick={saveSettings} style={styles.saveBtn}>Save Settings</button>
-            <button onClick={() => setShowSettings(false)} style={styles.cancelBtn}>Cancel</button>
+            <button onClick={saveSettings} style={{ ...styles.saveBtn, background: currentColors.accent, color: theme === 'dark' ? '#000' : '#fff' }}>Save Settings</button>
+            <button onClick={() => setShowSettings(false)} style={{ ...styles.cancelBtn, color: currentColors.subtext, border: `1px solid ${currentColors.border}` }}>Cancel</button>
           </div>
         </div>
       )}
@@ -237,35 +248,32 @@ export default function App() {
               justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start',
             }}
           >
-            {msg.sender === 'hiro' && (
-              <div style={styles.avatar}>H</div>
-            )}
             <div
               style={{
                 ...styles.bubble,
-                background: msg.sender === 'user' ? 'linear-gradient(135deg, #4f46e5, #3b82f6)' : 'rgba(30, 41, 59, 0.7)',
-                border: msg.sender === 'user' ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
+                background: msg.sender === 'user' ? currentColors.userBubble : currentColors.agentBubble,
+                border: `1px solid ${currentColors.border}`,
               }}
             >
               <div style={styles.messageText}>{msg.text}</div>
               
               {msg.screenshot && (
-                <div style={styles.screenshotContainer}>
-                  <div style={styles.screenshotLabel}>Environment Capture Snapshot:</div>
+                <div style={{ ...styles.screenshotContainer, border: `1px solid ${currentColors.border}` }}>
+                  <div style={{ ...styles.screenshotLabel, color: currentColors.subtext, background: currentColors.headerBg }}>Environment Capture Snapshot:</div>
                   <img src={msg.screenshot} alt="Screen capture" style={styles.screenshot} />
                 </div>
               )}
 
               {msg.thought && (
-                <div style={styles.thinkingTrace}>
-                  <div style={styles.traceHeader}>System-2 Trace</div>
-                  <div style={styles.traceBody}>{msg.thought}</div>
+                <div style={{ ...styles.thinkingTrace, borderLeft: `3px solid ${currentColors.accent}`, background: currentColors.headerBg }}>
+                  <div style={{ ...styles.traceHeader, color: currentColors.accent }}>System-2 Trace</div>
+                  <div style={{ ...styles.traceBody, color: currentColors.text }}>{msg.thought}</div>
                 </div>
               )}
 
               {msg.action && (
-                <div style={styles.actionBlock}>
-                  <span style={styles.actionLabel}>Action Call: </span>
+                <div style={{ ...styles.actionBlock, background: currentColors.inputBg, border: `1px solid ${currentColors.border}` }}>
+                  <span style={{ ...styles.actionLabel, color: currentColors.accent }}>Action Call: </span>
                   <code>{msg.action}</code>
                 </div>
               )}
@@ -275,21 +283,22 @@ export default function App() {
         <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={handleSend} style={styles.inputArea}>
+      <form onSubmit={handleSend} style={{ ...styles.inputArea, background: currentColors.headerBg, borderTop: `1px solid ${currentColors.border}` }}>
         <input
           type="text"
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
-          placeholder={isProcessing ? "Hiro is executing desktop steps..." : "Type instructions (e.g. 'read hiro_audit.jsonl')..."}
+          placeholder={isProcessing ? "Hiro is executing desktop steps..." : "Type instructions..."}
           disabled={isProcessing}
-          style={styles.inputField}
-
+          style={{ ...styles.inputField, background: currentColors.inputBg, color: currentColors.text, border: `1px solid ${currentColors.border}` }}
         />
         <button
           type="submit"
           disabled={isProcessing || !instruction.trim()}
           style={{
             ...styles.button,
+            background: currentColors.accent,
+            color: theme === 'dark' ? '#000' : '#fff',
             opacity: (isProcessing || !instruction.trim()) ? 0.5 : 1,
             cursor: (isProcessing || !instruction.trim()) ? 'not-allowed' : 'pointer',
           }}
@@ -301,6 +310,33 @@ export default function App() {
   );
 }
 
+// Neutral Solid Palette
+const darkColors = {
+  background: '#121212',
+  text: '#e4e4e7',
+  subtext: '#a1a1aa',
+  border: '#27272a',
+  headerBg: '#18181b',
+  buttonBg: '#27272a',
+  inputBg: '#18181b',
+  userBubble: '#27272a',
+  agentBubble: '#18181b',
+  accent: '#ffffff',
+};
+
+const lightColors = {
+  background: '#ffffff',
+  text: '#18181b',
+  subtext: '#71717a',
+  border: '#e4e4e7',
+  headerBg: '#f4f4f5',
+  buttonBg: '#e4e4e7',
+  inputBg: '#ffffff',
+  userBubble: '#f4f4f5',
+  agentBubble: '#ffffff',
+  accent: '#18181b',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
@@ -308,220 +344,173 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     height: '100%',
     boxSizing: 'border-box',
-    backdropFilter: 'blur(20px)',
+    fontFamily: 'system-ui, -apple-system, sans-serif',
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '16px 24px',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-    background: 'rgba(15, 23, 42, 0.4)',
+    padding: '12px 20px',
   },
   logoContainer: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
+    gap: '8px',
   },
-  pulse: {
-    width: '10px',
-    height: '10px',
+  indicator: {
+    width: '8px',
+    height: '8px',
     borderRadius: '50%',
-    background: '#10b981',
-    boxShadow: '0 0 10px #10b981',
   },
   title: {
-    fontSize: '1.2rem',
-    fontWeight: 700,
-    background: 'linear-gradient(90deg, #6366f1, #3b82f6)',
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
+    fontSize: '1rem',
+    fontWeight: 600,
   },
   systemBadge: {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
   },
-  settingsBtn: {
-    background: 'rgba(255, 255, 255, 0.08)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    color: '#e2e8f0',
-    padding: '4px 12px',
-    borderRadius: '6px',
+  themeBtn: {
+    padding: '4px 10px',
+    borderRadius: '4px',
     cursor: 'pointer',
-    fontSize: '0.8rem',
+    fontSize: '0.75rem',
+    fontWeight: 500,
+  },
+  settingsBtn: {
+    padding: '4px 10px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '0.75rem',
+    fontWeight: 500,
   },
   panicBtn: {
-    background: 'rgba(239, 68, 68, 0.2)',
-    border: '1px solid rgba(239, 68, 68, 0.4)',
-    color: '#f87171',
-    padding: '4px 12px',
-    borderRadius: '6px',
+    background: '#7f1d1d',
+    border: '1px solid #b91c1c',
+    color: '#fca5a5',
+    padding: '4px 10px',
+    borderRadius: '4px',
     cursor: 'pointer',
-    fontSize: '0.8rem',
+    fontSize: '0.75rem',
     fontWeight: 600,
   },
-  badgeText: {
-    fontSize: '0.75rem',
-    color: '#34d399',
-    background: 'rgba(16, 185, 129, 0.1)',
-    border: '1px solid rgba(16, 185, 129, 0.2)',
-    padding: '2px 8px',
-    borderRadius: '4px',
-  },
   errorBanner: {
-    background: 'rgba(239, 68, 68, 0.2)',
-    borderBottom: '1px solid rgba(239, 68, 68, 0.4)',
-    color: '#ef4444',
-    padding: '12px 24px',
-    fontSize: '0.9rem',
+    background: '#7f1d1d',
+    color: '#fca5a5',
+    padding: '10px 20px',
+    fontSize: '0.85rem',
   },
   settingsModal: {
-    background: '#1e293b',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-    padding: '20px 24px',
+    padding: '16px 20px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px',
+    gap: '10px',
   },
   modalTitle: {
     margin: 0,
-    fontSize: '1rem',
+    fontSize: '0.9rem',
     fontWeight: 600,
-    color: '#f1f5f9',
   },
   formGroup: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '6px',
+    gap: '4px',
   },
   label: {
-    fontSize: '0.8rem',
-    color: '#94a3b8',
+    fontSize: '0.75rem',
   },
   select: {
-    background: '#0f172a',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '6px',
-    padding: '8px 12px',
-    color: '#e2e8f0',
+    borderRadius: '4px',
+    padding: '6px 10px',
+    fontSize: '0.85rem',
     outline: 'none',
   },
   input: {
-    background: '#0f172a',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '6px',
-    padding: '8px 12px',
-    color: '#e2e8f0',
+    borderRadius: '4px',
+    padding: '6px 10px',
+    fontSize: '0.85rem',
     outline: 'none',
   },
   modalActions: {
     display: 'flex',
-    gap: '10px',
-    marginTop: '10px',
+    gap: '8px',
+    marginTop: '6px',
   },
   saveBtn: {
-    background: '#4f46e5',
-    color: '#fff',
     border: 'none',
-    padding: '8px 16px',
-    borderRadius: '6px',
+    padding: '6px 14px',
+    borderRadius: '4px',
     cursor: 'pointer',
     fontWeight: 600,
+    fontSize: '0.85rem',
   },
   cancelBtn: {
     background: 'transparent',
-    color: '#94a3b8',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    padding: '8px 16px',
-    borderRadius: '6px',
+    padding: '6px 14px',
+    borderRadius: '4px',
     cursor: 'pointer',
+    fontSize: '0.85rem',
   },
   chatArea: {
     flex: 1,
-    padding: '24px',
+    padding: '20px',
     overflowY: 'auto',
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px',
+    gap: '16px',
   },
   messageRow: {
     display: 'flex',
-    gap: '12px',
     maxWidth: '85%',
   },
-  avatar: {
-    width: '32px',
-    height: '32px',
-    borderRadius: '50%',
-    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    fontWeight: 'bold',
-    color: '#fff',
-    fontSize: '0.9rem',
-    flexShrink: 0,
-  },
   bubble: {
-    padding: '16px',
-    borderRadius: '16px',
-    color: '#f8fafc',
-    fontSize: '0.95rem',
-    lineHeight: 1.5,
+    padding: '12px 16px',
+    borderRadius: '8px',
+    fontSize: '0.9rem',
+    lineHeight: 1.4,
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px',
-    boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+    gap: '8px',
   },
   messageText: {
     wordBreak: 'break-word',
   },
   screenshotContainer: {
-    marginTop: '8px',
-    borderRadius: '8px',
+    marginTop: '6px',
+    borderRadius: '4px',
     overflow: 'hidden',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
   },
   screenshotLabel: {
-    fontSize: '0.75rem',
-    color: '#94a3b8',
-    padding: '6px 10px',
-    background: 'rgba(0,0,0,0.2)',
+    fontSize: '0.7rem',
+    padding: '4px 8px',
   },
   screenshot: {
     width: '100%',
-    maxHeight: '260px',
+    maxHeight: '240px',
     objectFit: 'contain',
     display: 'block',
   },
   thinkingTrace: {
-    background: 'rgba(0, 0, 0, 0.25)',
-    borderRadius: '8px',
-    padding: '10px 12px',
-    borderLeft: '3px solid #6366f1',
+    borderRadius: '4px',
+    padding: '8px 10px',
   },
   traceHeader: {
-    fontSize: '0.75rem',
+    fontSize: '0.7rem',
     fontWeight: 600,
-    color: '#818cf8',
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
-    marginBottom: '4px',
+    marginBottom: '2px',
   },
   traceBody: {
-    fontSize: '0.85rem',
-    color: '#cbd5e1',
+    fontSize: '0.8rem',
   },
   actionBlock: {
-    fontSize: '0.85rem',
-    background: 'rgba(16, 185, 129, 0.1)',
-    color: '#34d399',
-    padding: '8px 12px',
-    borderRadius: '6px',
-    border: '1px solid rgba(16, 185, 129, 0.2)',
+    fontSize: '0.8rem',
+    padding: '6px 10px',
+    borderRadius: '4px',
     display: 'flex',
-    gap: '6px',
+    gap: '4px',
     alignItems: 'center',
   },
   actionLabel: {
@@ -529,30 +518,21 @@ const styles: Record<string, React.CSSProperties> = {
   },
   inputArea: {
     display: 'flex',
-    padding: '20px 24px',
-    gap: '12px',
-    background: 'rgba(15, 23, 42, 0.6)',
-    borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+    padding: '16px 20px',
+    gap: '10px',
   },
   inputField: {
     flex: 1,
-    background: '#1e293b',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '12px',
-    padding: '12px 16px',
-    color: '#fff',
-    fontSize: '0.95rem',
+    borderRadius: '6px',
+    padding: '10px 14px',
+    fontSize: '0.9rem',
     outline: 'none',
   },
-
   button: {
-    background: 'linear-gradient(135deg, #4f46e5, #3b82f6)',
     border: 'none',
-    color: '#fff',
-    padding: '0 24px',
-    borderRadius: '12px',
+    padding: '0 20px',
+    borderRadius: '6px',
     fontWeight: 600,
-    fontSize: '0.95rem',
-    transition: 'all 0.2s',
+    fontSize: '0.9rem',
   },
 };
