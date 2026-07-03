@@ -95,6 +95,8 @@ export default function App() {
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [expandedMessageIds, setExpandedMessageIds] = useState<Record<string, boolean>>({});
+  const [clarifyQuestion, setClarifyQuestion] = useState<{ title: string; options: string[] } | null>(null);
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [showSettings, setShowSettings] = useState(false);
@@ -505,12 +507,12 @@ call_user()`;
                                 </span>
                                 
                                 {/* Collapsed view: Action + Shimmer effect if running/active */}
-                                <div className={`group-open/details:hidden ${isStepRunning ? 'shimmer-text font-semibold' : ''}`}>
-                                  <span className={`${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-850'} font-semibold`}>
+                                <div className={`group-open/details:hidden ${isStepRunning ? 'shimmer-text font-semibold' : ''} flex items-center min-w-0 max-w-[340px] truncate`}>
+                                  <span className={`${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-850'} font-semibold flex-shrink-0`}>
                                     {actionInfo.label}
                                   </span>
                                   {actionInfo.param && (
-                                    <span className="text-zinc-500 ml-1.5 font-normal">
+                                    <span className="text-zinc-550 ml-1.5 font-normal truncate block select-none">
                                       {actionInfo.param}
                                     </span>
                                   )}
@@ -665,6 +667,86 @@ call_user()`;
 
       {/* ─── Bottom Chat Input Area ─── */}
       <div className={`p-3 border-t flex-shrink-0 transition-colors ${theme === 'dark' ? 'border-zinc-900/50 bg-zinc-950/10' : 'border-zinc-200 bg-zinc-100/20'}`}>
+        {/* Clarification Questions Card */}
+        {clarifyQuestion && (
+          <div className={`mb-3 p-3.5 rounded-[20px] border shadow-md flex flex-col gap-3 animate-slide-up
+            ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800'}`}>
+            
+            <div className="flex justify-between items-center px-0.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Clarification Request</span>
+              <button 
+                onClick={() => setClarifyQuestion(null)}
+                className="text-zinc-500 hover:text-zinc-300 text-xs p-0.5 rounded cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="text-[12.5px] font-semibold leading-snug">
+              {clarifyQuestion.title}
+            </div>
+
+            <div className="flex flex-col gap-2 my-1">
+              {clarifyQuestion.options.map((opt, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setSelectedOption(i)}
+                  className={`flex items-center gap-2.5 w-full text-left p-2 rounded-xl border text-[12px] transition-all cursor-pointer
+                    ${selectedOption === i 
+                      ? (theme === 'dark' ? 'border-zinc-400 bg-zinc-850 text-zinc-100' : 'border-zinc-500 bg-zinc-50 text-zinc-900') 
+                      : (theme === 'dark' ? 'border-zinc-800/80 hover:bg-zinc-800/40 text-zinc-455' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-655')}`}
+                >
+                  <span className={`w-4 h-4 rounded text-[9.5px] font-semibold flex items-center justify-center border font-mono
+                    ${selectedOption === i 
+                      ? 'bg-zinc-150 text-zinc-950 border-transparent' 
+                      : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}
+                  >
+                    {i + 1}
+                  </span>
+                  <span>{opt}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-2 text-xs pt-1 border-t border-zinc-800/40">
+              <button
+                type="button"
+                onClick={() => {
+                  setClarifyQuestion(null);
+                  setSelectedOption(null);
+                }}
+                className="px-3 py-1 rounded-lg text-zinc-500 hover:text-zinc-300 font-medium transition-colors cursor-pointer"
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                disabled={selectedOption === null}
+                onClick={async () => {
+                  if (selectedOption !== null) {
+                    const text = clarifyQuestion.options[selectedOption];
+                    setClarifyQuestion(null);
+                    setSelectedOption(null);
+                    
+                    setInstruction(text);
+                    setTimeout(() => {
+                      const triggerBtn = document.getElementById("send-btn-trigger");
+                      if (triggerBtn) triggerBtn.click();
+                    }, 50);
+                  }
+                }}
+                className={`px-4 py-1.5 rounded-lg font-semibold shadow transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
+                  ${theme === 'dark' 
+                    ? 'bg-zinc-100 text-zinc-950 hover:bg-zinc-200' 
+                    : 'bg-zinc-950 text-white hover:bg-zinc-900'}`}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        )}
+
         <form 
           onSubmit={handleSend} 
           className={`flex flex-col p-2.5 rounded-[24px] border shadow-sm transition-all duration-200
@@ -725,6 +807,7 @@ call_user()`;
 
             {/* Circular Send Button */}
             <button
+              id="send-btn-trigger"
               type="submit"
               disabled={isProcessing || !instruction.trim()}
               className={`flex items-center justify-center w-7 h-7 rounded-full font-semibold transition-all shadow-sm cursor-pointer
