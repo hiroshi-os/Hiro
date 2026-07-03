@@ -845,10 +845,13 @@ pub async fn start_agent_loop(
                 if trimmed.starts_with("Thought:") {
                     current_thought = trimmed.strip_prefix("Thought:").unwrap().trim().to_string();
                 } else if trimmed.starts_with("Action:") {
-                    let action_part = trimmed.strip_prefix("Action:").unwrap().trim();
+                    let mut action_part = trimmed.strip_prefix("Action:").unwrap().trim();
+                    while action_part.starts_with("Action:") {
+                        action_part = action_part.strip_prefix("Action:").unwrap().trim();
+                    }
                     if let Some(parsed) = parse_uitars_action(action_part) {
                         parsed_action = Some(parsed);
-                        raw_act_line = trimmed.to_string();
+                        raw_act_line = action_part.to_string();
                     }
                 }
             }
