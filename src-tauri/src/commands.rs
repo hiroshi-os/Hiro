@@ -865,3 +865,16 @@ pub async fn clear_session() -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn inject_user_hint(hint: String) -> Result<(), String> {
+    let mut state = STATE.lock().await;
+    let next_step = state.history.len() as u32 + 1;
+    state.history.push(HistoricalTurn {
+        step: next_step,
+        action: "user_hint()".to_string(),
+        thought: hint,
+        screenshot: None,
+    });
+    Ok(())
+}
+

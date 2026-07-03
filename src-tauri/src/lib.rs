@@ -14,7 +14,8 @@ pub fn run() {
             commands::start_agent_loop,
             commands::update_routing_settings,
             commands::trigger_panic,
-            commands::clear_session
+            commands::clear_session,
+            commands::inject_user_hint
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

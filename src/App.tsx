@@ -12,7 +12,8 @@ import {
   Columns, 
   X, 
   Loader2,
-  AlertTriangle
+  AlertTriangle,
+  Pin
 } from 'lucide-react';
 
 interface AgentStep {
@@ -97,6 +98,7 @@ export default function App() {
   const [expandedMessageIds, setExpandedMessageIds] = useState<Record<string, boolean>>({});
   const [clarifyQuestion, setClarifyQuestion] = useState<{ title: string; options: string[] } | null>(null);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [isPinned, setIsPinned] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [showSettings, setShowSettings] = useState(false);
@@ -195,12 +197,30 @@ export default function App() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!instruction.trim() || isProcessing) return;
+    if (!instruction.trim()) return;
+
+    const userText = instruction;
+    setInstruction('');
+
+    if (isProcessing) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Math.random().toString(),
+          sender: 'user',
+          text: userText,
+        },
+      ]);
+      try {
+        await invoke('inject_user_hint', { hint: userText });
+      } catch (err) {
+        console.error('Failed to inject user steering hint:', err);
+      }
+      return;
+    }
 
     setErrorMsg(null);
     const userMessageId = Math.random().toString();
-    const userText = instruction;
-    setInstruction('');
 
     let screenshotBase64 = '';
     try {
@@ -339,6 +359,16 @@ call_user()`;
     }
   };
   const closeWindow = () => getCurrentWebviewWindow().close();
+  const togglePinWindow = async () => {
+    try {
+      const win = getCurrentWebviewWindow();
+      const nextPinState = !isPinned;
+      await win.setAlwaysOnTop(nextPinState);
+      setIsPinned(nextPinState);
+    } catch (err) {
+      console.error('Failed toggling pin window state:', err);
+    }
+  };
 
   const handleMouseDown = async (e: React.MouseEvent) => {
     if (e.button === 0 && !(e.target as HTMLElement).closest('button')) {
@@ -421,6 +451,14 @@ call_user()`;
 
           {/* Right Window Controls */}
           <div className="flex items-center gap-0.5 z-[1010] pointer-events-auto">
+            <button 
+              onClick={togglePinWindow} 
+              className={`win-btn p-1.5 rounded-md transition-colors cursor-pointer
+                ${isPinned ? 'text-emerald-500 hover:text-emerald-450' : 'text-zinc-550 hover:text-zinc-100'}`} 
+              title={isPinned ? "Unpin Window" : "Pin Window (Always on Top)"}
+            >
+              <Pin className={`w-3 h-3 ${isPinned ? 'rotate-45' : ''} transition-transform`} />
+            </button>
             <button 
               onClick={minimizeWindow} 
               className="win-btn p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors" 

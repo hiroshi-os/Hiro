@@ -14,6 +14,7 @@
     "core:window:allow-set-content-protected",
     "core:window:allow-set-size",
     "core:window:allow-set-position",
-    "core:window:allow-center"
+    "core:window:allow-center",
+    "core:window:allow-set-always-on-top"
   ]
 }
