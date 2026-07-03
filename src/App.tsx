@@ -1251,7 +1251,7 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                       className="fixed inset-0 z-40" 
                       onClick={() => setShowModeDropdown(false)} 
                     />
-                    <div className={`absolute bottom-full left-0 mb-2 w-52 rounded-xl border p-1 shadow-xl z-50 flex flex-col gap-0.5 animate-slide-up backdrop-blur-md
+                    <div className={`absolute bottom-full left-0 mb-2 w-56 rounded-xl border p-1 shadow-xl z-50 flex flex-col gap-0.5 animate-slide-up backdrop-blur-md
                       ${theme === "dark" ? "bg-zinc-950/98 border-zinc-900" : "bg-white/98 border-zinc-200"}`}
                     >
                       {[
@@ -1281,12 +1281,12 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                               }`}
                           >
                             <div className="flex items-center justify-between w-full">
-                              <span className="text-[11px] font-medium">{modeItem.label}</span>
+                              <span className="text-[12px] font-medium">{modeItem.label}</span>
                               {isSel && (
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
                               )}
                             </div>
-                            <span className={`text-[9px] leading-normal font-normal ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-450'}`}>
+                            <span className={`text-[10.5px] leading-normal font-normal ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-450'}`}>
                               {modeItem.desc}
                             </span>
                           </button>
