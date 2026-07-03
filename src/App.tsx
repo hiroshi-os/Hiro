@@ -746,7 +746,7 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                               return (
                                 <details
                                   key={step.id}
-                                  className="group/details cursor-pointer w-full border-none bg-transparent"
+                                  className="group cursor-pointer w-full border-none bg-transparent"
                                   open={isOpen}
                                   onToggle={(e) => {
                                     const isDomOpen = (
@@ -761,12 +761,12 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                                   }}
                                 >
                                   <summary className="flex items-center gap-1.5 font-medium list-none select-none text-zinc-400 hover:text-zinc-200">
-                                    <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 text-zinc-500 font-bold text-[10px] group-open/details:rotate-90 transition-transform select-none font-mono">
+                                    <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 text-zinc-500 font-bold text-[10px] group-open:rotate-90 transition-transform select-none font-mono">
                                       &gt;
                                     </span>
 
                                     {/* Collapsed view: Action type and truncated param */}
-                                    <div className={`flex items-center group-open/details:hidden max-w-[85%] truncate select-none ${isStepRunning ? "shimmer-text font-semibold" : ""}`}>
+                                    <div className={`flex items-center group-open:hidden max-w-[85%] truncate select-none ${isStepRunning ? "shimmer-text font-semibold" : ""}`}>
                                       <span
                                         className={`${theme === "dark" ? "text-zinc-300" : "text-zinc-850"} font-semibold flex-shrink-0`}
                                       >
@@ -780,7 +780,7 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                                     </div>
 
                                     {/* Expanded view: Header action name */}
-                                    <div className="hidden group-open/details:inline font-semibold text-zinc-400">
+                                    <div className="hidden group-open:inline font-semibold text-zinc-400">
                                       {actionInfo.label}
                                     </div>
                                   </summary>
