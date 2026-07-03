@@ -5,7 +5,8 @@
   "identifier": "com.bit.hiro",
   "build": {
     "beforeDevCommand": "bun run dev",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:1420",
+
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"
   },
