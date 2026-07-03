@@ -80,6 +80,19 @@ lazy_static::lazy_static! {
 }
 
 
+// 2.2 Model Variant Sanitization & Fallback Registry
+// Bare model names without version tags cause Ollama 404 errors.
+// This maps common short names to their deterministic tagged variants.
+fn sanitize_model_target(raw_model: &str) -> String {
+    match raw_model.trim() {
+        "" => "ui-tars:2b".to_string(),
+        "ui-tars" => "ui-tars:2b".to_string(),
+        "qwen2.5-vl" => "qwen2.5-vl:3b".to_string(),
+        "llava" => "llava:7b".to_string(),
+        other => other.to_string(),
+    }
+}
+
 // Check non-privileged safety guard
 fn is_admin_or_root() -> bool {
     is_elevated()
@@ -548,6 +561,10 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
         settings_snapshot = state.settings.clone();
     }
 
+    // 2.2 Model Variant Sanitization — resolve bare names to tagged variants
+    let resolved_model = sanitize_model_target(&settings_snapshot.model);
+    eprintln!("[agent] Model resolved: '{}' → '{}'", &settings_snapshot.model, &resolved_model);
+
     let max_steps: u32 = 15;
 
     tokio::spawn(async move {
@@ -563,15 +580,17 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
                 break;
             }
 
-            // 1. Capture primary display screen frame buffer
+            // 1. Capture primary display — non-blocking window state transitions
             let mut screenshot_base64 = String::new();
             if let Some(window) = app.get_webview_window("main") {
+                // 2.3 Async repaint cooldown: hide → yield to compositor → capture → show + focus
                 let _ = window.hide();
-                std::thread::sleep(std::time::Duration::from_millis(200));
+                tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
                 if let Ok(data) = capture_screen().await {
                     screenshot_base64 = data;
                 }
                 let _ = window.show();
+                let _ = window.set_focus();
             } else {
                 if let Ok(data) = capture_screen().await {
                     screenshot_base64 = data;
@@ -656,7 +675,7 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
                 &settings_snapshot.provider_type,
                 &settings_snapshot.endpoint,
                 settings_snapshot.api_key.as_deref(),
-                &settings_snapshot.model,
+                &resolved_model,
                 &vlm_messages,
             ).await;
 
@@ -667,13 +686,18 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
                 },
                 Err(e) => {
                     eprintln!("[agent] Step {} VLM call failed: {}", step, &e);
+                    // 2.1 Atomic state inversion: unlock state BEFORE emitting
+                    {
+                        let mut state = state_clone.lock().await;
+                        state.is_running = false;
+                    }
                     let _ = app.emit("agent-step", AgentStepEvent {
                         status: "aborted".into(),
                         thought: Some(format!("VLM inference failed: {}", e)),
                         action: None,
                         mcp_tool_call: None,
                     });
-                    break;
+                    return; // Exit the spawned task entirely
                 }
             };
 
@@ -815,18 +839,24 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
             tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
         }
 
-        // Mark loop as finished
-        let mut state = state_clone.lock().await;
-        state.is_running = false;
+        // 2.1 Atomic state inversion: guarantee state unlock on ALL exit paths
+        {
+            let mut state = state_clone.lock().await;
+            let was_running = state.is_running;
+            state.is_running = false;
 
-        // If we exhausted max steps without finishing, notify the UI
-        if state.history.last().map(|t| t.action.as_str()) != Some("Action: finished()") {
-            let _ = app.emit("agent-step", AgentStepEvent {
-                status: "completed".into(),
-                thought: Some(format!("Reached maximum step limit ({}). Task may be incomplete.", max_steps)),
-                action: None,
-                mcp_tool_call: None,
-            });
+            // If we exhausted max steps without finishing, notify the UI
+            if was_running {
+                let last_action = state.history.last().map(|t| t.action.as_str()).unwrap_or("");
+                if !last_action.contains("finished()") {
+                    let _ = app.emit("agent-step", AgentStepEvent {
+                        status: "completed".into(),
+                        thought: Some(format!("Reached maximum step limit ({}). Task may be incomplete.", max_steps)),
+                        action: None,
+                        mcp_tool_call: None,
+                    });
+                }
+            }
         }
     });
 
