@@ -662,7 +662,7 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
             // 4. Call the VLM
             let _ = app.emit("agent-step", AgentStepEvent {
                 status: "running".into(),
-                thought: Some(format!("Step {}: Sending screenshot to VLM...", step)),
+                thought: Some("Thinking...".into()),
                 action: None,
                 mcp_tool_call: None,
             });
@@ -724,7 +724,7 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
                 eprintln!("[agent] Step {}: No parseable action in VLM response", step);
                 let _ = app.emit("agent-step", AgentStepEvent {
                     status: "running".into(),
-                    thought: Some(format!("Step {}: VLM response unparseable — retrying...\nRaw: {}", step, &raw_vlm_text[..200.min(raw_vlm_text.len())])),
+                    thought: Some("Retrying...".into()),
                     action: None,
                     mcp_tool_call: None,
                 });

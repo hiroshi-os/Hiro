@@ -517,11 +517,6 @@ wait(seconds=NUM_SECONDS) (use when waiting for transitions, loading bars, anima
                       ${theme === 'dark' ? 'bg-zinc-900/60 text-zinc-200' : 'bg-zinc-100 text-zinc-850'}`}
                   >
                     <div>{msg.text}</div>
-                    {msg.screenshot && (
-                      <div className={`mt-1.5 rounded-lg overflow-hidden border max-w-sm ${theme === 'dark' ? 'border-zinc-800' : 'border-zinc-200'}`}>
-                        <img src={msg.screenshot} alt="capture" className="w-full max-h-[180px] object-contain block" />
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <div className="w-full text-[12.5px] leading-relaxed flex flex-col gap-2.5">
