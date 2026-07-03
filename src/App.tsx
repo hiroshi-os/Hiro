@@ -21,6 +21,7 @@ import {
   Copy,
   ThumbsUp,
   ThumbsDown,
+  ChevronDown,
 } from "lucide-react";
 
 interface AgentStep {
@@ -1242,7 +1243,7 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                   title="Select agent execution mode"
                 >
                   <span className="capitalize">{agentMode} Mode</span>
-                  <span className="text-[6.5px] opacity-50 select-none">▼</span>
+                  <ChevronDown className="w-3 h-3 text-zinc-500 flex-shrink-0" />
                 </button>
 
                 {showModeDropdown && (
