@@ -202,6 +202,7 @@ export default function App() {
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [isPinned, setIsPinned] = useState(true);
   const [ghostMode, setGhostMode] = useState(true);
+  const [agentMode, setAgentMode] = useState<'ask' | 'quick' | 'focus' | 'long' | 'goal'>('focus');
   const [sessionFeedback, setSessionFeedback] = useState<
     "like" | "dislike" | null
   >(null);
@@ -359,7 +360,7 @@ export default function App() {
       console.error("Failed to capture screen snapshot:", err);
     }
 
-    const systemPrompt = `You are a GUI agent. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task.
+    const baseSystemPrompt = `You are a GUI agent. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task.
 
 ## Output Format
 Thought: ...
@@ -399,6 +400,23 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
 4. Text behavior inside inputs: When you execute type(content='...'), the text may visually overflow or look cut off/truncated in the next screenshot because the input field scrolls. This is NORMAL. If your action history shows you already typed the message, DO NOT try to select all, clear, delete, or retype it. Immediately move to hotkey(key='enter') to submit it.
 5. Interactive Focus Failures: If your action history shows you already attempted to click an input field or text box (e.g. at (517,848)) but the subsequent screenshot demonstrates that your text failed to register or typing didn't populate, DO NOT repeat the exact same coordinate points. The coordinate likely landed on unreactive padding or a border frame. You MUST modify your target position by trying coordinates a few pixels higher, lower, or to the left (e.g., offset by 15-20 pixels) to explicitly intercept the active text box center.`;
 
+    let maxStepsArg = 15;
+    let modeGuideline = "";
+    if (agentMode === "ask") {
+      maxStepsArg = 1;
+      modeGuideline = "\n6. You are in ASK Mode. You are NOT allowed to perform any coordinate clicks, typing, hotkeys, dragging, waiting, or calling tools. Simply answer the user's question directly in a conversational text paragraph.";
+    } else if (agentMode === "quick") {
+      maxStepsArg = 5;
+      modeGuideline = "\n6. You are in QUICK Mode. Work as fast as possible to achieve the task in minimal steps.";
+    } else if (agentMode === "long") {
+      maxStepsArg = 35;
+    } else if (agentMode === "goal") {
+      maxStepsArg = 100;
+      modeGuideline = "\n6. You are in GOAL Mode. Continue refining, double-checking, and looping until the goal is fully achieved.";
+    }
+
+    const systemPrompt = baseSystemPrompt + modeGuideline;
+
     setMessages((prev) => [
       ...prev,
       {
@@ -414,7 +432,11 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
     setIsProcessing(true);
 
     try {
-      await invoke("start_agent_loop", { instruction: userText, systemPrompt });
+      await invoke("start_agent_loop", { 
+        instruction: userText, 
+        systemPrompt, 
+        maxSteps: maxStepsArg 
+      });
     } catch (err) {
       setErrorMsg(String(err));
       setMessages((prev) => [
@@ -1212,49 +1234,21 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                 </svg>
               </button>
 
-              <button
-                type="button"
-                className={`p-1.5 rounded-full border text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer
-                  ${theme === "dark" ? "border-zinc-800/60 hover:bg-zinc-800/60" : "border-zinc-200 hover:bg-zinc-50"}`}
-                title="Toggle Reasoning Context"
+              <select
+                value={agentMode}
+                onChange={(e) => setAgentMode(e.target.value as any)}
+                className={`rounded-full px-2.5 py-0.5 text-[9px] font-extrabold outline-none border cursor-pointer uppercase tracking-wider select-none
+                  ${theme === "dark" 
+                    ? "bg-zinc-900 border-zinc-800 text-zinc-350 hover:text-zinc-150 hover:border-zinc-700" 
+                    : "bg-white border-zinc-200 text-zinc-550 hover:text-zinc-800 hover:border-zinc-300"}`}
+                title="Select agent execution mode"
               >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
-                  <path d="M9 18h6" />
-                  <path d="M10 22h4" />
-                </svg>
-              </button>
-
-              <button
-                type="button"
-                className={`p-1.5 rounded-full border text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer
-                  ${theme === "dark" ? "border-zinc-800/60 hover:bg-zinc-800/60" : "border-zinc-200 hover:bg-zinc-50"}`}
-                title="More Actions"
-              >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="12" cy="12" r="1" />
-                  <circle cx="19" cy="12" r="1" />
-                  <circle cx="5" cy="12" r="1" />
-                </svg>
-              </button>
+                <option value="ask">Ask</option>
+                <option value="quick">Quick</option>
+                <option value="focus">Focus</option>
+                <option value="long">Long</option>
+                <option value="goal">Goal</option>
+              </select>
             </div>
 
             {/* Conditional Stop / Steer / Send Controls */}

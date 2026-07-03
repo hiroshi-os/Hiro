@@ -578,7 +578,7 @@ pub async fn trigger_panic(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt: String) -> Result<(), String> {
+pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt: String, max_steps: u32) -> Result<(), String> {
 
     if is_admin_or_root() {
         return Err("Execution Rejected: Hiro cannot be run under elevated administrator or root privileges.".into());
@@ -604,8 +604,6 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
     // 2.2 Model Variant Sanitization — resolve bare names to tagged variants
     let resolved_model = sanitize_model_target(&settings_snapshot.model);
     eprintln!("[agent] Model resolved: '{}' → '{}'", &settings_snapshot.model, &resolved_model);
-
-    let max_steps: u32 = 15;
 
     tokio::spawn(async move {
         let _ = app.emit("agent-step", AgentStepEvent {
