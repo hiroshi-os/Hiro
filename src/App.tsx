@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { LogicalPosition, LogicalSize, currentMonitor } from '@tauri-apps/api/window';
 
 interface Message {
   id: string;
@@ -210,13 +211,37 @@ call_user()`;
 
   // Custom window controls
   const minimizeWindow = () => getCurrentWebviewWindow().minimize();
-  const toggleMaximize = async () => {
-    const win = getCurrentWebviewWindow();
-    const maximized = await win.isMaximized();
-    if (maximized) {
-      await win.unmaximize();
-    } else {
-      await win.maximize();
+  const toggleSidebarMode = async () => {
+    try {
+      const monitor = await currentMonitor();
+      if (monitor) {
+        const win = getCurrentWebviewWindow();
+        const scaleFactor = monitor.scaleFactor;
+        const workAreaSize = monitor.workArea.size.toLogical(scaleFactor);
+        const workAreaPos = monitor.workArea.position.toLogical(scaleFactor);
+
+        const sidebarWidth = 420;
+        const targetHeight = workAreaSize.height;
+        const targetX = workAreaPos.x + workAreaSize.width - sidebarWidth;
+        const targetY = workAreaPos.y;
+
+        const currentSize = await win.innerSize();
+        const logicalCurrentSize = currentSize.toLogical(scaleFactor);
+
+        // If already positioned as a full-height sidebar on the right, restore to center
+        const isSidebar = Math.abs(logicalCurrentSize.width - sidebarWidth) < 15 && 
+                          Math.abs(logicalCurrentSize.height - targetHeight) < 15;
+
+        if (isSidebar) {
+          await win.setSize(new LogicalSize(460, 680));
+          await win.center();
+        } else {
+          await win.setSize(new LogicalSize(sidebarWidth, targetHeight));
+          await win.setPosition(new LogicalPosition(targetX, targetY));
+        }
+      }
+    } catch (err) {
+      console.error('Failed toggling sidebar layout mode:', err);
     }
   };
   const closeWindow = () => getCurrentWebviewWindow().close();
@@ -253,8 +278,11 @@ call_user()`;
           <button onClick={minimizeWindow} style={{ ...s.winBtn, color: c.sub }} title="Minimize">
             <svg width="10" height="10" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>
           </button>
-          <button onClick={toggleMaximize} style={{ ...s.winBtn, color: c.sub }} title="Maximize">
-            <svg width="10" height="10" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1"/></svg>
+          <button onClick={toggleSidebarMode} style={{ ...s.winBtn, color: c.sub }} title="Toggle Sidebar Mode">
+            <svg width="10" height="10" viewBox="0 0 10 10">
+              <rect x="1" y="1" width="8" height="8" rx="1" fill="none" stroke="currentColor" strokeWidth="1"/>
+              <line x1="6" y1="1" x2="6" y2="9" stroke="currentColor" strokeWidth="1"/>
+            </svg>
           </button>
           <button onClick={closeWindow} style={{ ...s.winBtnClose, color: c.sub }} title="Close">
             <svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" strokeWidth="1.2"/><line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1.2"/></svg>
