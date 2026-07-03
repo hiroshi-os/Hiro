@@ -481,11 +481,13 @@ const s: Record<string, React.CSSProperties> = {
     padding: '0 12px',
     userSelect: 'none',
     flexShrink: 0,
+    zIndex: 1000,
   },
   titleLeft: {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
+    pointerEvents: 'none',
   },
   dot: {
     width: '7px',
@@ -507,6 +509,7 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '2px',
+    zIndex: 1010,
   },
   winBtn: {
     background: 'none',
@@ -519,6 +522,7 @@ const s: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     opacity: 0.6,
     transition: 'opacity 0.15s',
+    pointerEvents: 'auto',
   },
   winBtnClose: {
     background: 'none',
@@ -531,6 +535,7 @@ const s: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     opacity: 0.6,
     transition: 'all 0.15s',
+    pointerEvents: 'auto',
   },
   // Toolbar
   toolbar: {
