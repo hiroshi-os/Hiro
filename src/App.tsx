@@ -97,6 +97,10 @@ function parseActionLabel(action: string | undefined): {
     label = "Wait";
     const match = clean.match(/seconds=(\d+)/);
     if (match) param = `${match[1]}s`;
+  } else if (clean.startsWith("macro_block")) {
+    label = "Macro Block";
+    const match = clean.match(/macro_block\(\s*\[(.*?)\]\s*\)/);
+    if (match) param = match[1];
   }
 
   return { label, param };
@@ -307,6 +311,10 @@ hotkey(key='KEY_COMBINATION')
 finished()
 call_user()
 wait(seconds=NUM_SECONDS) or wait() (use when waiting for transitions, loading bars, animations, or server responses before taking the next screenshot. wait() defaults to a 2.5 seconds pause)
+
+### Batch Scheduling
+macro_block([ACTION_1, ACTION_2, ...]) -> Execute an ordered list of coordinate, template, or input actions sequentially within a single turn without waiting for an intermediate screenshot. Max limit: 4 actions per block.
+Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotkey(key='enter')])
 
 ## Guidelines
 1. To input text: You must FIRST click the input field to focus it, SECOND use type(content='...'), and THIRD use hotkey(key='enter') if a submission is required.

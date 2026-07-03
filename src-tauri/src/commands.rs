@@ -363,6 +363,13 @@ pub fn execute_native_action(action: ParsedAction, monitor_width: u32, monitor_h
                 _ => { eprintln!("[grounding] Unsupported hotkey combo: {}", key); }
             }
         },
+        ParsedAction::MacroBlock { actions } => {
+            eprintln!("[orchestrator] Unrolling batch macro block with {} actions...", actions.len());
+            for sub_action in actions {
+                execute_native_action(sub_action, monitor_width, monitor_height, scale_factor);
+                std::thread::sleep(std::time::Duration::from_millis(150));
+            }
+        },
         _ => {}
     }
 }
@@ -399,6 +406,9 @@ lazy_static::lazy_static! {
     static ref FINISHED_RE: Regex = Regex::new(r"finished\(\)").unwrap();
     static ref CALL_TOOL_RE: Regex = Regex::new(r"call_tool\(name='(.*?)'(?:,\s*(.*?))?\)").unwrap();
     static ref WAIT_RE: Regex = Regex::new(r"wait\(seconds=(\d+)\)").unwrap();
+    // Macro block parsing patterns
+    static ref MACRO_BLOCK_RE: Regex = Regex::new(r"macro_block\(\s*\[([\s\S]*?)\]\s*\)").unwrap();
+    static ref ACTION_SPLIT_RE: Regex = Regex::new(r"\),\s*").unwrap();
 }
 
 #[derive(Debug, Clone)]
@@ -418,11 +428,27 @@ pub enum ParsedAction {
     Hotkey { key: String },
     Wait { seconds: u32 },
     CallTool { name: String, args: Value },
+    MacroBlock { actions: Vec<ParsedAction> },
     Stop,
 }
 
 pub fn parse_uitars_action(action_str: &str) -> Option<ParsedAction> {
     let clean_str = action_str.trim();
+
+    if let Some(caps) = MACRO_BLOCK_RE.captures(clean_str) {
+        let inner_actions_str = &caps[1];
+        let mut parsed_sub_actions = Vec::new();
+        for sub_action_raw in ACTION_SPLIT_RE.split(inner_actions_str) {
+            let mut sub_action = sub_action_raw.trim().to_string();
+            if !sub_action.is_empty() && !sub_action.ends_with(')') {
+                sub_action.push(')');
+            }
+            if let Some(act) = parse_uitars_action(&sub_action) {
+                parsed_sub_actions.push(act);
+            }
+        }
+        return Some(ParsedAction::MacroBlock { actions: parsed_sub_actions });
+    }
 
     if let Some(caps) = CLICK_RE.captures(clean_str) {
         let x = caps[1].parse::<u32>().ok()?;
