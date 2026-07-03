@@ -12,19 +12,23 @@ import {
   Columns, 
   X, 
   Loader2,
-  AlertTriangle,
-  Play,
-  HelpCircle
+  AlertTriangle
 } from 'lucide-react';
+
+interface AgentStep {
+  id: string;
+  thought?: string;
+  action?: string;
+  status?: string;
+  screenshot?: string;
+}
 
 interface Message {
   id: string;
   sender: 'user' | 'hiro';
   text: string;
   screenshot?: string;
-  thought?: string;
-  action?: string;
-  status?: string;
+  steps?: AgentStep[];
 }
 
 interface AgentStepPayload {
@@ -32,6 +36,52 @@ interface AgentStepPayload {
   thought: string | null;
   action: string | null;
   mcp_tool_call: string | null;
+}
+
+function parseActionLabel(action: string | undefined, fallbackText: string): { label: string; param: string } {
+  if (!action) {
+    return { label: fallbackText || "Thinking", param: "" };
+  }
+  const clean = action.replace(/^Action:\s*/, "").trim();
+  let label = "Interacting";
+  let param = "";
+
+  if (clean.startsWith("click")) {
+    label = "Click";
+    const match = clean.match(/target='([^']+)'/) || clean.match(/start_box='([^']+)'/);
+    if (match) param = match[1];
+  } else if (clean.startsWith("left_double")) {
+    label = "Double Click";
+    const match = clean.match(/target='([^']+)'/) || clean.match(/start_box='([^']+)'/);
+    if (match) param = match[1];
+  } else if (clean.startsWith("right_single")) {
+    label = "Right Click";
+    const match = clean.match(/target='([^']+)'/) || clean.match(/start_box='([^']+)'/);
+    if (match) param = match[1];
+  } else if (clean.startsWith("drag")) {
+    label = "Drag";
+    const matchStart = clean.match(/start_box='([^']+)'/);
+    const matchEnd = clean.match(/end_box='([^']+)'/);
+    if (matchStart && matchEnd) param = `${matchStart[1]} ➔ ${matchEnd[1]}`;
+  } else if (clean.startsWith("type")) {
+    label = "Type";
+    const match = clean.match(/content='([^']+)'/);
+    if (match) param = match[1];
+  } else if (clean.startsWith("scroll")) {
+    label = "Scroll";
+    const match = clean.match(/direction='([^']+)'/);
+    if (match) param = match[1];
+  } else if (clean.startsWith("hotkey")) {
+    label = "Hotkey";
+    const match = clean.match(/key='([^']+)'/);
+    if (match) param = match[1];
+  } else if (clean.startsWith("finished")) {
+    label = "Finished";
+  } else if (clean.startsWith("call_user")) {
+    label = "Call User";
+  }
+
+  return { label, param };
 }
 
 export default function App() {
@@ -44,6 +94,7 @@ export default function App() {
     },
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [expandedMessageIds, setExpandedMessageIds] = useState<Record<string, boolean>>({});
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [showSettings, setShowSettings] = useState(false);
@@ -75,30 +126,59 @@ export default function App() {
 
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
-        if (lastMessage && lastMessage.sender === 'hiro' && lastMessage.status !== 'completed' && lastMessage.status !== 'aborted') {
-          return [
-            ...prev.slice(0, -1),
-            {
-              ...lastMessage,
-              text: payload.mcp_tool_call || payload.thought || lastMessage.text,
-              thought: payload.thought || undefined,
-              action: payload.action || undefined,
-              status: payload.status,
-            },
-          ];
-        } else {
+        
+        // Ensure the last message is a hiro response block
+        if (!lastMessage || lastMessage.sender !== 'hiro' || lastMessage.id === 'welcome' || lastMessage.id.startsWith('reset-')) {
           return [
             ...prev,
             {
-              id: Math.random().toString(),
+              id: 'hiro-' + Date.now(),
               sender: 'hiro',
-              text: payload.mcp_tool_call || payload.thought || 'Processing...',
-              thought: payload.thought || undefined,
-              action: payload.action || undefined,
-              status: payload.status,
-            },
+              text: payload.thought || 'Processing...',
+              steps: [
+                {
+                  id: Math.random().toString(),
+                  thought: payload.thought || undefined,
+                  action: payload.action || undefined,
+                  status: payload.status,
+                }
+              ]
+            }
           ];
         }
+
+        // We have a lastMessage that is a hiro response step card. Let's update its steps list.
+        const steps = lastMessage.steps ? [...lastMessage.steps] : [];
+        const lastStep = steps[steps.length - 1];
+
+        // A step is considered "finished writing" if we already recorded an action for it,
+        // and the incoming payload is starting a new VLM thought (i.e. action is null).
+        const isNewStepStarting = lastStep && lastStep.action && !payload.action;
+
+        if (lastStep && !isNewStepStarting && lastStep.status !== 'completed' && lastStep.status !== 'aborted') {
+          steps[steps.length - 1] = {
+            ...lastStep,
+            thought: payload.thought || lastStep.thought,
+            action: payload.action || lastStep.action,
+            status: payload.status,
+          };
+        } else {
+          steps.push({
+            id: Math.random().toString(),
+            thought: payload.thought || undefined,
+            action: payload.action || undefined,
+            status: payload.status,
+          });
+        }
+
+        return [
+          ...prev.slice(0, -1),
+          {
+            ...lastMessage,
+            text: payload.thought || lastMessage.text,
+            steps: steps,
+          }
+        ];
       });
 
       if (payload.status === 'completed' || payload.status === 'aborted') {
@@ -377,49 +457,107 @@ call_user()`;
         
         {/* Chat / Messages List */}
         <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3 scroll-smooth">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex w-full ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
+          {messages.map((msg, index) => {
+            const isUser = msg.sender === 'user';
+            const isLastMessage = index === messages.length - 1;
+            
+            return (
               <div
-                className={`max-w-[90%] px-3.5 py-2.5 rounded-xl text-[12.5px] leading-relaxed border flex flex-col gap-2 shadow-sm
-                  ${msg.sender === 'user' 
-                    ? (theme === 'dark' ? 'bg-zinc-900 border-zinc-800/80 text-zinc-200' : 'bg-zinc-100 border-zinc-200/80 text-zinc-800') 
-                    : (theme === 'dark' ? 'bg-zinc-950/40 border-zinc-900 text-zinc-300' : 'bg-white border-zinc-200 text-zinc-700')}`}
+                key={msg.id}
+                className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}
               >
-                <div>{msg.text}</div>
-
-                {msg.screenshot && (
-                  <div className={`mt-1.5 rounded-lg overflow-hidden border ${theme === 'dark' ? 'border-zinc-800' : 'border-zinc-200'}`}>
-                    <div className={`text-[9px] px-2 py-1 uppercase tracking-wider font-semibold 
-                      ${theme === 'dark' ? 'bg-zinc-900 text-zinc-500' : 'bg-zinc-100 text-zinc-400'}`}>
-                      State Capture Snapshot
-                    </div>
-                    <img src={msg.screenshot} alt="capture" className="w-full max-h-[220px] object-contain block" />
+                {isUser ? (
+                  <div
+                    className={`max-w-[85%] px-3 py-1.5 rounded-xl text-[12.5px] leading-relaxed shadow-sm
+                      ${theme === 'dark' ? 'bg-zinc-900/60 text-zinc-200' : 'bg-zinc-100 text-zinc-850'}`}
+                  >
+                    <div>{msg.text}</div>
+                    {msg.screenshot && (
+                      <div className={`mt-1.5 rounded-lg overflow-hidden border max-w-sm ${theme === 'dark' ? 'border-zinc-800' : 'border-zinc-200'}`}>
+                        <img src={msg.screenshot} alt="capture" className="w-full max-h-[180px] object-contain block" />
+                      </div>
+                    )}
                   </div>
-                )}
+                ) : (
+                  <div className="w-full text-[12.5px] leading-relaxed flex flex-col gap-2.5">
+                    {msg.steps && msg.steps.length > 0 ? (
+                      <div className="flex flex-col gap-2">
+                        {msg.steps.map((step, stepIndex) => {
+                          const isLastStep = stepIndex === msg.steps!.length - 1;
+                          const isStepRunning = isLastStep && isProcessing && isLastMessage;
+                          const shouldDefaultOpen = isLastStep && isLastMessage;
+                          const actionInfo = parseActionLabel(step.action, step.thought || "Thinking");
 
-                {msg.thought && (
-                  <div className={`rounded-lg p-2.5 border-l-2 text-[11.5px]
-                    ${theme === 'dark' ? 'bg-zinc-950/70 border-zinc-500 text-zinc-400' : 'bg-zinc-50 border-zinc-600 text-zinc-600'}`}>
-                    <div className="text-[9px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
-                      <HelpCircle className="w-3 h-3" /> System-2 Thought Trace
-                    </div>
-                    <div>{msg.thought}</div>
-                  </div>
-                )}
+                          return (
+                            <details 
+                              key={step.id}
+                              className="group/details cursor-pointer w-full border-none bg-transparent"
+                              open={expandedMessageIds[step.id] ?? shouldDefaultOpen}
+                              onToggle={(e) => {
+                                const isOpen = (e.target as HTMLDetailsElement).open;
+                                setExpandedMessageIds(prev => ({ ...prev, [step.id]: isOpen }));
+                              }}
+                            >
+                              <summary className="flex items-center gap-1.5 font-medium list-none select-none text-zinc-400 hover:text-zinc-200">
+                                {/* Minimal plus indicator */}
+                                <span className="text-[11px] text-zinc-500 font-mono w-3.5 h-3.5 flex items-center justify-center select-none">
+                                  +
+                                </span>
+                                
+                                {/* Collapsed view: Action + Shimmer effect if running/active */}
+                                <div className={`group-open/details:hidden ${isStepRunning ? 'shimmer-text font-semibold' : ''}`}>
+                                  <span className={`${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-850'} font-semibold`}>
+                                    {actionInfo.label}
+                                  </span>
+                                  {actionInfo.param && (
+                                    <span className="text-zinc-500 ml-1.5 font-normal">
+                                      {actionInfo.param}
+                                    </span>
+                                  )}
+                                </div>
 
-                {msg.action && (
-                  <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border font-mono text-[11px]
-                    ${theme === 'dark' ? 'bg-zinc-950 border-zinc-800 text-zinc-300' : 'bg-zinc-50 border-zinc-200 text-zinc-800'}`}>
-                    <Play className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                    <code className="break-all">{msg.action}</code>
+                                {/* Expanded view: Header action name */}
+                                <div className="hidden group-open/details:inline font-semibold text-zinc-400">
+                                  {actionInfo.label}
+                                </div>
+                              </summary>
+
+                              {/* Expanded Indented Monochromatic Log Body */}
+                              <div className="mt-2 pl-4 flex flex-col gap-2 cursor-default border-l border-zinc-800/40">
+                                {step.thought && (
+                                  <div className={`text-[12px] leading-relaxed max-w-[95%] ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                                    {step.thought}
+                                  </div>
+                                )}
+
+                                {step.action && (
+                                  <div className="font-mono text-[11px] text-zinc-500 break-all select-all">
+                                    {step.action}
+                                  </div>
+                                )}
+
+                                {step.screenshot && (
+                                  <div className={`rounded-lg overflow-hidden border max-w-sm mt-1 transition-opacity duration-200 opacity-70 hover:opacity-100
+                                    ${theme === 'dark' ? 'border-zinc-800/60' : 'border-zinc-200/60'}`}>
+                                    <img src={step.screenshot} alt="capture" className="w-full max-h-[160px] object-contain block" />
+                                  </div>
+                                )}
+                              </div>
+                            </details>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      // Handle static text response when steps list is empty (e.g. initial welcomes)
+                      <div className={theme === 'dark' ? 'text-zinc-300' : 'text-zinc-800'}>
+                        {msg.text}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            </div>
-          ))}
+            );
+          })}
           <div ref={messagesEndRef} />
         </div>
 
