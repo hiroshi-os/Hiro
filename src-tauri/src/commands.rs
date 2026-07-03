@@ -78,13 +78,23 @@ fn is_admin_or_root() -> bool {
 // Helper to write to JSONL Audit file
 fn write_audit_log(entry: AuditLogEntry) -> std::io::Result<()> {
     let serialized = serde_json::to_string(&entry)? + "\n";
+    
+    // Resolve standard User Local App Data folder to avoid compilation loops in dev mode
+    let mut log_path = std::env::current_dir()?;
+    if log_path.join("src-tauri").exists() {
+        // Dev environment workspace safety
+        log_path = log_path.join("src-tauri");
+    }
+    let target_file = log_path.join("hiro_audit.log");
+
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open("hiro_audit.jsonl")?;
+        .open(target_file)?;
     file.write_all(serialized.as_bytes())?;
     Ok(())
 }
+
 
 // Adaptive Image Downsampler (Memory Tiering)
 // Max source width is downsampled to 800px width keeping aspect ratio for immediate history (T-1 to T-3)

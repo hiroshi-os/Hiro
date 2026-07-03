@@ -9,6 +9,8 @@
 
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"
+
+
   },
   "app": {
     "windows": [
