@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   LogicalPosition,
   LogicalSize,
@@ -204,6 +205,8 @@ export default function App() {
   const [isPinned, setIsPinned] = useState(true);
   const [ghostMode, setGhostMode] = useState(true);
   const [agentMode, setAgentMode] = useState<'ask' | 'quick' | 'focus' | 'long' | 'goal'>('focus');
+  const [attachments, setAttachments] = useState<{name: string, path: string, type: 'image' | 'text'}[]>([]);
+  const [browserMode, setBrowserMode] = useState(false);
   const [showModeDropdown, setShowModeDropdown] = useState(false);
   const [sessionFeedback, setSessionFeedback] = useState<
     "like" | "dislike" | null
@@ -326,6 +329,32 @@ export default function App() {
     };
   }, []);
 
+  const handleAttach = async () => {
+    try {
+      const selected = await open({
+        multiple: true,
+        filters: [
+          {
+            name: "Supported Files",
+            extensions: ["png", "jpeg", "jpg", "txt", "rs", "js", "ts", "tsx", "jsx", "json", "py", "html", "css", "md"],
+          },
+        ],
+      });
+      if (selected) {
+        const paths = Array.isArray(selected) ? selected : [selected];
+        const newAttachments = paths.map((p) => {
+          const name = p.split(/[\\/]/).pop() || p;
+          const ext = name.split('.').pop()?.toLowerCase();
+          const type: 'image' | 'text' = (ext === 'png' || ext === 'jpeg' || ext === 'jpg') ? 'image' : 'text';
+          return { name, path: p, type };
+        });
+        setAttachments((prev) => [...prev, ...newAttachments]);
+      }
+    } catch (err) {
+      console.error("Failed to pick files:", err);
+    }
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!instruction.trim()) return;
@@ -417,7 +446,20 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
       modeGuideline = "\n6. You are in GOAL Mode. Continue refining, double-checking, and looping until the goal is fully achieved.";
     }
 
-    const systemPrompt = baseSystemPrompt + modeGuideline;
+    let browserPromptGuideline = "";
+    if (browserMode) {
+      browserPromptGuideline = `\n\n## Headless Browser DOM Automation Space\nYou have spawned a background headless browser instance. You can bypass coordinate grounding/clicks on web elements by using these direct DOM-level actions:
+browser_goto(url='https://...') -> Navigate the browser to the specified URL.
+browser_click(selector='css_selector') -> Click the element matching the CSS selector.
+browser_type(selector='css_selector', text='text_to_type') -> Focus and type text into the field matching the CSS selector.
+browser_extract(selector='css_selector') -> Extract the inner text content from the target element.
+
+Guidelines for Browser Mode:
+1. Always prefer browser_* DOM actions over coordinate-based mouse actions (click, type) when navigating websites or filling forms if browser mode is active.
+2. Target elements using clean CSS selectors (e.g. '#submit-btn', 'input[name="q"]').`;
+    }
+
+    const systemPrompt = baseSystemPrompt + modeGuideline + browserPromptGuideline;
 
     setMessages((prev) => [
       ...prev,
@@ -437,8 +479,10 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
       await invoke("start_agent_loop", { 
         instruction: userText, 
         systemPrompt, 
-        maxSteps: maxStepsArg 
+        maxSteps: maxStepsArg,
+        attachments: attachments.map((a) => ({ name: a.name, path: a.path, file_type: a.type }))
       });
+      setAttachments([]);
     } catch (err) {
       setErrorMsg(String(err));
       setMessages((prev) => [
@@ -1175,6 +1219,31 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                 : "bg-white border-zinc-200/80 text-zinc-850 focus-within:border-zinc-300/80"
             }`}
         >
+          {/* Attachments Pills List */}
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-2.5 pb-2 border-b border-zinc-800/20 mb-1.5 select-none">
+              {attachments.map((file, idx) => (
+                <div
+                  key={idx}
+                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] select-none
+                    ${theme === "dark" 
+                      ? "bg-zinc-800 text-zinc-300 border border-zinc-700/40" 
+                      : "bg-zinc-100 text-zinc-700 border border-zinc-200"}`}
+                >
+                  <span className="opacity-60">{file.type === 'image' ? '🖼️' : '📄'}</span>
+                  <span className="truncate max-w-[120px]">{file.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                    className="text-zinc-550 hover:text-zinc-300 font-bold ml-0.5 cursor-pointer"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Top Line: Input Field */}
           <input
             type="text"
@@ -1192,6 +1261,7 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
             <div className="flex items-center gap-1.5 pointer-events-auto">
               <button
                 type="button"
+                onClick={handleAttach}
                 className={`p-1.5 rounded-full border text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer
                   ${theme === "dark" ? "border-zinc-800/60 hover:bg-zinc-800/60" : "border-zinc-200 hover:bg-zinc-50"}`}
                 title="Attach Source Files"
@@ -1212,9 +1282,17 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
 
               <button
                 type="button"
-                className={`p-1.5 rounded-full border text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer
-                  ${theme === "dark" ? "border-zinc-800/60 hover:bg-zinc-800/60" : "border-zinc-200 hover:bg-zinc-50"}`}
-                title="Search Desktop / Web"
+                onClick={() => setBrowserMode(!browserMode)}
+                className={`p-1.5 rounded-full border transition-colors cursor-pointer
+                  ${browserMode
+                    ? theme === "dark"
+                      ? "bg-emerald-950/40 text-emerald-400 border-emerald-800/40 hover:bg-emerald-900/60 hover:text-emerald-300"
+                      : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 hover:text-emerald-800"
+                    : theme === "dark"
+                      ? "border-zinc-800/60 text-zinc-450 hover:text-zinc-200 hover:bg-zinc-800/60"
+                      : "border-zinc-200 text-zinc-450 hover:text-zinc-800 hover:bg-zinc-50"
+                  }`}
+                title="Toggle Headless Browser DOM Automation Mode"
               >
                 <svg
                   width="13"

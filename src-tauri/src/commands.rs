@@ -32,6 +32,13 @@ pub struct HistoricalTurn {
     pub screenshot: Option<String>, // Base64 JPEG string
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct Attachment {
+    pub name: String,
+    pub path: String,
+    pub file_type: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuditLogEntry {
     pub timestamp: String,
@@ -63,6 +70,7 @@ struct ActiveState {
     history: Vec<HistoricalTurn>,
     settings: ProviderSettings,
     cancel_token: Option<CancellationToken>,
+    last_extracted_text: Option<String>,
 }
 
 lazy_static::lazy_static! {
@@ -76,6 +84,7 @@ lazy_static::lazy_static! {
             model: "minimax-m3:cloud".to_string(),
         },
         cancel_token: None,
+        last_extracted_text: None,
     }));
 }
 
@@ -286,92 +295,127 @@ fn parse_key(key_str: &str) -> Result<Key, String> {
 
 // Coordinate Translation implementation within the native hardware injection node.
 // Handles both coordinate-based (Enigo) and template-grounded (rustautogui) actions.
-pub fn execute_native_action(action: ParsedAction, monitor_width: u32, monitor_height: u32, scale_factor: f64) {
-    match action {
-        // ─── Coordinate-based actions (VLM start_box output, Enigo driver) ───
-        ParsedAction::Click { x, y } => {
-            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64) as u32;
-            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64) as u32;
-            let _ = grounding::click_at(physical_x, physical_y);
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            let _ = grounding::click_at(physical_x, physical_y.saturating_sub(10));
-        },
-        ParsedAction::DoubleFloat { x, y } => {
-            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64) as u32;
-            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64) as u32;
-            let _ = grounding::double_click_at(physical_x, physical_y);
-        },
-        ParsedAction::RightClick { x, y } => {
-            let physical_x = ((x as f64 / 1000.0) * monitor_width as f64) as u32;
-            let physical_y = ((y as f64 / 1000.0) * monitor_height as f64) as u32;
-            let _ = grounding::right_click_at(physical_x, physical_y);
-        },
-        ParsedAction::Drag { x1, y1, x2, y2 } => {
-            let px1 = ((x1 as f64 / 1000.0) * monitor_width as f64) as u32;
-            let py1 = ((y1 as f64 / 1000.0) * monitor_height as f64) as u32;
-            let px2 = ((x2 as f64 / 1000.0) * monitor_width as f64) as u32;
-            let py2 = ((y2 as f64 / 1000.0) * monitor_height as f64) as u32;
-            let _ = grounding::click_at(px1, py1);
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            let _ = grounding::drag_to(px2, py2, 0.3);
-        },
+pub fn execute_native_action(action: ParsedAction, monitor_width: u32, monitor_height: u32, scale_factor: f64) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+    Box::pin(async move {
+        match action {
+            // ─── Coordinate-based actions (VLM start_box output, Enigo driver) ───
+            ParsedAction::Click { x, y } => {
+                let physical_x = ((x as f64 / 1000.0) * monitor_width as f64) as u32;
+                let physical_y = ((y as f64 / 1000.0) * monitor_height as f64) as u32;
+                let _ = grounding::click_at(physical_x, physical_y);
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                let _ = grounding::click_at(physical_x, physical_y.saturating_sub(10));
+            },
+            ParsedAction::DoubleFloat { x, y } => {
+                let physical_x = ((x as f64 / 1000.0) * monitor_width as f64) as u32;
+                let physical_y = ((y as f64 / 1000.0) * monitor_height as f64) as u32;
+                let _ = grounding::double_click_at(physical_x, physical_y);
+            },
+            ParsedAction::RightClick { x, y } => {
+                let physical_x = ((x as f64 / 1000.0) * monitor_width as f64) as u32;
+                let physical_y = ((y as f64 / 1000.0) * monitor_height as f64) as u32;
+                let _ = grounding::right_click_at(physical_x, physical_y);
+            },
+            ParsedAction::Drag { x1, y1, x2, y2 } => {
+                let px1 = ((x1 as f64 / 1000.0) * monitor_width as f64) as u32;
+                let py1 = ((y1 as f64 / 1000.0) * monitor_height as f64) as u32;
+                let px2 = ((x2 as f64 / 1000.0) * monitor_width as f64) as u32;
+                let py2 = ((y2 as f64 / 1000.0) * monitor_height as f64) as u32;
+                let _ = grounding::click_at(px1, py1);
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                let _ = grounding::drag_to(px2, py2, 0.3);
+            },
 
-        // ─── Template-grounded actions (rustautogui deterministic matching) ───
-        ParsedAction::ClickTarget { target } => {
-            let path = resolve_template_path(&target);
-            match grounding::find_and_click_file(&path, 0.90, None) {
-                Ok(Some((x, y))) => {
-                    eprintln!("[grounding] ClickTarget '{}' matched at ({}, {})", target, x, y);
-                },
-                Ok(None) => {
-                    eprintln!("[grounding] ClickTarget '{}' not found on screen", target);
-                },
-                Err(e) => {
-                    eprintln!("[grounding] ClickTarget '{}' error: {}", target, e);
-                },
-            }
-        },
-        ParsedAction::DoubleClickTarget { target } => {
-            let path = resolve_template_path(&target);
-            if let Ok(Some((x, y))) = grounding::find_template_from_file(&path, 0.90, None) {
-                let _ = grounding::double_click_at(x, y);
-            }
-        },
-        ParsedAction::RightClickTarget { target } => {
-            let path = resolve_template_path(&target);
-            if let Ok(Some((x, y))) = grounding::find_template_from_file(&path, 0.90, None) {
-                let _ = grounding::right_click_at(x, y);
-            }
-        },
+            // ─── Template-grounded actions (rustautogui deterministic matching) ───
+            ParsedAction::ClickTarget { target } => {
+                let path = resolve_template_path(&target);
+                match grounding::find_and_click_file(&path, 0.90, None) {
+                    Ok(Some((x, y))) => {
+                        eprintln!("[grounding] ClickTarget '{}' matched at ({}, {})", target, x, y);
+                    },
+                    Ok(None) => {
+                        eprintln!("[grounding] ClickTarget '{}' not found on screen", target);
+                    },
+                    Err(e) => {
+                        eprintln!("[grounding] ClickTarget '{}' error: {}", target, e);
+                    },
+                }
+            },
+            ParsedAction::DoubleClickTarget { target } => {
+                let path = resolve_template_path(&target);
+                if let Ok(Some((x, y))) = grounding::find_template_from_file(&path, 0.90, None) {
+                    let _ = grounding::double_click_at(x, y);
+                }
+            },
+            ParsedAction::RightClickTarget { target } => {
+                let path = resolve_template_path(&target);
+                if let Ok(Some((x, y))) = grounding::find_template_from_file(&path, 0.90, None) {
+                    let _ = grounding::right_click_at(x, y);
+                }
+            },
 
 
-        // ─── Common actions (routed through grounding native drivers) ───
-        ParsedAction::Type { content } => {
-            let _ = grounding::type_text(&content);
-            std::thread::sleep(std::time::Duration::from_millis(300));
-        },
-        ParsedAction::Scroll { direction } => {
-            let _ = grounding::scroll(&direction);
-        },
-        ParsedAction::Hotkey { key } => {
-            // Parse multi-key combos like "ctrl+shift+t"
-            let parts: Vec<&str> = key.split('+').collect();
-            match parts.len() {
-                1 => { let _ = grounding::key_press(parts[0]); },
-                2 => { let _ = grounding::hotkey(parts[0], parts[1], None); },
-                3 => { let _ = grounding::hotkey(parts[0], parts[1], Some(parts[2])); },
-                _ => { eprintln!("[grounding] Unsupported hotkey combo: {}", key); }
-            }
-        },
-        ParsedAction::MacroBlock { actions } => {
-            eprintln!("[orchestrator] Unrolling batch macro block with {} actions...", actions.len());
-            for sub_action in actions {
-                execute_native_action(sub_action, monitor_width, monitor_height, scale_factor);
-                std::thread::sleep(std::time::Duration::from_millis(150));
-            }
-        },
-        _ => {}
-    }
+            // ─── Common actions (routed through grounding native drivers) ───
+            ParsedAction::Type { content } => {
+                let _ = grounding::type_text(&content);
+                std::thread::sleep(std::time::Duration::from_millis(300));
+            },
+            ParsedAction::Scroll { direction } => {
+                let _ = grounding::scroll(&direction);
+            },
+            ParsedAction::Hotkey { key } => {
+                // Parse multi-key combos like "ctrl+shift+t"
+                let parts: Vec<&str> = key.split('+').collect();
+                match parts.len() {
+                    1 => { let _ = grounding::key_press(parts[0]); },
+                    2 => { let _ = grounding::hotkey(parts[0], parts[1], None); },
+                    3 => { let _ = grounding::hotkey(parts[0], parts[1], Some(parts[2])); },
+                    _ => { eprintln!("[grounding] Unsupported hotkey combo: {}", key); }
+                }
+            },
+            ParsedAction::MacroBlock { actions } => {
+                eprintln!("[orchestrator] Unrolling batch macro block with {} actions...", actions.len());
+                for sub_action in actions {
+                    execute_native_action(sub_action, monitor_width, monitor_height, scale_factor).await;
+                    std::thread::sleep(std::time::Duration::from_millis(150));
+                }
+            },
+            // ─── Headless Browser DOM Actions ───
+            ParsedAction::BrowserGoto { url } => {
+                eprintln!("[browser] Navigating to: {}", url);
+                if let Err(e) = crate::browser::browser_goto(&url).await {
+                    eprintln!("[browser] Goto error: {}", e);
+                }
+            },
+            ParsedAction::BrowserClick { selector } => {
+                eprintln!("[browser] Clicking selector: {}", selector);
+                if let Err(e) = crate::browser::browser_click(&selector).await {
+                    eprintln!("[browser] Click error: {}", e);
+                }
+            },
+            ParsedAction::BrowserType { selector, text } => {
+                eprintln!("[browser] Typing into selector: {} -> {}", selector, text);
+                if let Err(e) = crate::browser::browser_type(&selector, &text).await {
+                    eprintln!("[browser] Type error: {}", e);
+                }
+            },
+            ParsedAction::BrowserExtract { selector } => {
+                eprintln!("[browser] Extracting inner text from: {}", selector);
+                match crate::browser::browser_extract(&selector).await {
+                    Ok(text) => {
+                        eprintln!("[browser] Extracted successfully: length={}", text.len());
+                        let state_clone = STATE.clone();
+                        let mut state = state_clone.lock().await;
+                        state.last_extracted_text = Some(text);
+                    },
+                    Err(e) => {
+                        eprintln!("[browser] Extract error: {}", e);
+                    }
+                }
+            },
+            _ => {}
+        }
+    })
 }
 
 /// Resolve a template alias to an absolute file path in the assets directory.
@@ -409,6 +453,11 @@ lazy_static::lazy_static! {
     // Macro block parsing patterns
     static ref MACRO_BLOCK_RE: Regex = Regex::new(r"macro_block\(\s*\[([\s\S]*?)\]\s*\)").unwrap();
     static ref ACTION_SPLIT_RE: Regex = Regex::new(r"\),\s*").unwrap();
+    // Headless Browser DOM Actions
+    static ref BROWSER_GOTO_RE: Regex = Regex::new(r"browser_goto\(url='(.*?)'\)").unwrap();
+    static ref BROWSER_CLICK_RE: Regex = Regex::new(r"browser_click\(selector='(.*?)'\)").unwrap();
+    static ref BROWSER_TYPE_RE: Regex = Regex::new(r"browser_type\(selector='(.*?)',\s*text='(.*?)'\)").unwrap();
+    static ref BROWSER_EXTRACT_RE: Regex = Regex::new(r"browser_extract\(selector='(.*?)'\)").unwrap();
 }
 
 #[derive(Debug, Clone)]
@@ -430,6 +479,11 @@ pub enum ParsedAction {
     CallTool { name: String, args: Value },
     MacroBlock { actions: Vec<ParsedAction> },
     Stop,
+    // Headless Browser DOM Actions
+    BrowserGoto { url: String },
+    BrowserClick { selector: String },
+    BrowserType { selector: String, text: String },
+    BrowserExtract { selector: String },
 }
 
 pub fn parse_uitars_action(action_str: &str) -> Option<ParsedAction> {
@@ -532,6 +586,19 @@ pub fn parse_uitars_action(action_str: &str) -> Option<ParsedAction> {
         return Some(ParsedAction::Stop);
     }
 
+    if let Some(caps) = BROWSER_GOTO_RE.captures(clean_str) {
+        return Some(ParsedAction::BrowserGoto { url: caps[1].to_string() });
+    }
+    if let Some(caps) = BROWSER_CLICK_RE.captures(clean_str) {
+        return Some(ParsedAction::BrowserClick { selector: caps[1].to_string() });
+    }
+    if let Some(caps) = BROWSER_TYPE_RE.captures(clean_str) {
+        return Some(ParsedAction::BrowserType { selector: caps[1].to_string(), text: caps[2].to_string() });
+    }
+    if let Some(caps) = BROWSER_EXTRACT_RE.captures(clean_str) {
+        return Some(ParsedAction::BrowserExtract { selector: caps[1].to_string() });
+    }
+
     None
 }
 
@@ -578,7 +645,13 @@ pub async fn trigger_panic(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt: String, max_steps: u32) -> Result<(), String> {
+pub async fn start_agent_loop(
+    app: AppHandle,
+    instruction: String,
+    system_prompt: String,
+    max_steps: u32,
+    attachments: Vec<Attachment>
+) -> Result<(), String> {
 
     if is_admin_or_root() {
         return Err("Execution Rejected: Hiro cannot be run under elevated administrator or root privileges.".into());
@@ -666,17 +739,47 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
                 }
             }
 
-            // Current turn: user message with current screenshot + task instruction
-            let current_user_content = if step == 1 {
+            // Current turn: user message with current screenshot + task instruction + attachments
+            let mut current_user_content = if step == 1 {
                 format!("Task: {}\n\nHere is the current screenshot of the desktop. What is the next action?", &instruction)
             } else {
                 format!("Task: {}\n\nHere is the updated screenshot after your previous action. What is the next action?", &instruction)
             };
 
+            // Inject last extracted browser DOM text if present
+            {
+                let mut state = state_clone.lock().await;
+                if let Some(text) = state.last_extracted_text.take() {
+                    current_user_content.push_str(&format!("\n\n[Browser Extracted Content (Latest DOM query output)]:\n{}", text));
+                }
+            }
+
+            let mut current_images = if screenshot_base64.is_empty() { vec![] } else { vec![screenshot_base64.clone()] };
+
+            // Process attachments on Step 1
+            if step == 1 {
+                for att in attachments.iter() {
+                    if att.file_type == "text" {
+                        if let Ok(content) = std::fs::read_to_string(&att.path) {
+                            current_user_content.push_str(&format!("\n\nAttached File ({}):\n{}", att.name, content));
+                        } else {
+                            current_user_content.push_str(&format!("\n\n[Warning: Failed to read attached file: {}]", att.name));
+                        }
+                    } else if att.file_type == "image" {
+                        if let Ok(bytes) = std::fs::read(&att.path) {
+                            let base64_data = BASE64_STANDARD.encode(bytes);
+                            current_images.push(base64_data);
+                        } else {
+                            current_user_content.push_str(&format!("\n\n[Warning: Failed to read attached image: {}]", att.name));
+                        }
+                    }
+                }
+            }
+
             vlm_messages.push(VlmMessage {
                 role: "user".to_string(),
                 content: current_user_content,
-                images: if screenshot_base64.is_empty() { vec![] } else { vec![screenshot_base64.clone()] },
+                images: current_images,
             });
 
             // 3. Perform Visual Context Memory Culling on history images
@@ -840,10 +943,7 @@ pub async fn start_agent_loop(app: AppHandle, instruction: String, system_prompt
                             let width = size.width;
                             let height = size.height;
                             
-                            // PRODUCTION HARDENING: Move execution away from the main async task executor
-                            let _ = tokio::task::spawn_blocking(move || {
-                                execute_native_action(other_action, width, height, scale_factor);
-                            }).await;
+                            execute_native_action(other_action, width, height, scale_factor).await;
                         }
                     }
                 }
