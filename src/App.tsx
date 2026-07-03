@@ -275,16 +275,16 @@ call_user()`;
           <span style={{ ...s.titleSub, color: c.sub }}>v0.1</span>
         </div>
         <div style={s.titleRight}>
-          <button onClick={minimizeWindow} style={{ ...s.winBtn, color: c.sub }} title="Minimize">
+          <button onClick={minimizeWindow} className="win-btn" style={{ ...s.winBtn, color: c.sub }} title="Minimize">
             <svg width="10" height="10" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>
           </button>
-          <button onClick={toggleSidebarMode} style={{ ...s.winBtn, color: c.sub }} title="Toggle Sidebar Mode">
+          <button onClick={toggleSidebarMode} className="win-btn" style={{ ...s.winBtn, color: c.sub }} title="Toggle Sidebar Mode">
             <svg width="10" height="10" viewBox="0 0 10 10">
               <rect x="1" y="1" width="8" height="8" rx="1" fill="none" stroke="currentColor" strokeWidth="1"/>
               <line x1="6" y1="1" x2="6" y2="9" stroke="currentColor" strokeWidth="1"/>
             </svg>
           </button>
-          <button onClick={closeWindow} style={{ ...s.winBtnClose, color: c.sub }} title="Close">
+          <button onClick={closeWindow} className="win-btn-close" style={{ ...s.winBtnClose, color: c.sub }} title="Close">
             <svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" strokeWidth="1.2"/><line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1.2"/></svg>
           </button>
         </div>

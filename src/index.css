@@ -82,3 +82,22 @@ button {
 button:hover {
   opacity: 0.85;
 }
+
+/* Custom window control button hover effects */
+.win-btn {
+  transition: background-color 0.2s ease, color 0.2s ease !important;
+}
+.win-btn:hover {
+  background-color: rgba(160, 160, 160, 0.18) !important;
+  color: var(--accent, #ffffff) !important;
+  opacity: 1 !important;
+}
+
+.win-btn-close {
+  transition: background-color 0.2s ease, color 0.2s ease !important;
+}
+.win-btn-close:hover {
+  background-color: #e11d48 !important; /* Rose red */
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
