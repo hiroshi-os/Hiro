@@ -46,6 +46,82 @@ interface AgentStepPayload {
   mcp_tool_call: string | null;
 }
 
+function parseInlineMarkdown(text: string, theme: "dark" | "light") {
+  const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
+
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return (
+        <strong 
+          key={i} 
+          className={`font-semibold ${theme === "dark" ? "text-zinc-100" : "text-zinc-950"}`}
+        >
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code 
+          key={i} 
+          className={`px-1.5 py-0.5 rounded text-[11px] font-mono mx-0.5 border
+            ${theme === "dark" 
+              ? "bg-zinc-900 border-zinc-800/80 text-zinc-300" 
+              : "bg-zinc-50 border-zinc-200/80 text-zinc-700"}`}
+        >
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return part;
+  });
+}
+
+function renderMarkdown(text: string, theme: "dark" | "light") {
+  if (!text) return null;
+  const lines = text.split("\n");
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {lines.map((line, idx) => {
+        let trimmed = line.trim();
+        
+        if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+          const content = trimmed.substring(2);
+          return (
+            <div key={idx} className="flex gap-2 pl-3 select-text">
+              <span className="text-zinc-500">•</span>
+              <span>{parseInlineMarkdown(content, theme)}</span>
+            </div>
+          );
+        }
+
+        const numberedMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
+        if (numberedMatch) {
+          const num = numberedMatch[1];
+          const content = numberedMatch[2];
+          return (
+            <div key={idx} className="flex gap-2 pl-3 select-text">
+              <span className="text-zinc-550 font-semibold">{num}.</span>
+              <span>{parseInlineMarkdown(content, theme)}</span>
+            </div>
+          );
+        }
+
+        if (trimmed === "") {
+          return <div key={idx} className="h-1" />;
+        }
+
+        return (
+          <div key={idx} className="leading-relaxed select-text">
+            {parseInlineMarkdown(line, theme)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function parseActionLabel(action: string | undefined): {
   label: string;
   param: string;
@@ -735,7 +811,7 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                               <div
                                 className={`mt-1 font-normal ${theme === "dark" ? "text-zinc-200" : "text-zinc-800"}`}
                               >
-                                {finalStep.thought}
+                                {renderMarkdown(finalStep.thought, theme)}
                               </div>
                             );
                           }
@@ -749,7 +825,7 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                           theme === "dark" ? "text-zinc-300" : "text-zinc-800"
                         }
                       >
-                        {msg.text}
+                        {renderMarkdown(msg.text, theme)}
                       </div>
                     )}
 
