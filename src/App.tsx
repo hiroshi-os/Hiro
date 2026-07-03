@@ -3,6 +3,20 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { LogicalPosition, LogicalSize, currentMonitor } from '@tauri-apps/api/window';
+import { 
+  Settings, 
+  RotateCcw, 
+  Sun, 
+  Moon, 
+  Minus, 
+  Columns, 
+  X, 
+  Send,
+  Loader2,
+  AlertTriangle,
+  Play,
+  HelpCircle
+} from 'lucide-react';
 
 interface Message {
   id: string;
@@ -27,7 +41,7 @@ export default function App() {
     {
       id: 'welcome',
       sender: 'hiro',
-      text: 'Ready. Type a task and I will execute it on your desktop.',
+      text: 'Ready. Describe a task, and I will automate your desktop.',
     },
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -43,7 +57,7 @@ export default function App() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Content protection + window setup on mount
+  // Content protection on mount
   useEffect(() => {
     const setup = async () => {
       const win = getCurrentWebviewWindow();
@@ -228,7 +242,6 @@ call_user()`;
         const currentSize = await win.innerSize();
         const logicalCurrentSize = currentSize.toLogical(scaleFactor);
 
-        // If already positioned as a full-height sidebar on the right, restore to center
         const isSidebar = Math.abs(logicalCurrentSize.width - sidebarWidth) < 15 && 
                           Math.abs(logicalCurrentSize.height - targetHeight) < 15;
 
@@ -256,539 +269,285 @@ call_user()`;
     }
   };
 
-  const c = theme === 'dark' ? darkColors : lightColors;
-  const bg = theme === 'dark'
-    ? `rgba(12, 12, 12, ${opacity / 100})`
-    : `rgba(255, 255, 255, ${opacity / 100})`;
+  const bgStyle = {
+    backgroundColor: theme === 'dark' 
+      ? `rgba(10, 10, 10, ${opacity / 100})` 
+      : `rgba(250, 250, 250, ${opacity / 100})`,
+  };
 
   return (
-    <div style={{ ...s.shell, background: bg, color: c.text, borderColor: c.border }}>
-
+    <div 
+      style={bgStyle} 
+      className={`flex flex-col absolute inset-0 rounded-xl border overflow-hidden font-sans text-[13px] backdrop-blur-2xl transition-colors duration-200
+        ${theme === 'dark' ? 'text-zinc-200 border-zinc-800/80 shadow-2xl shadow-black/80' : 'text-zinc-800 border-zinc-200/80 shadow-2xl shadow-zinc-300/40'}`}
+    >
       {/* ─── Custom Titlebar ─── */}
       <div 
         onMouseDown={handleMouseDown}
-        style={{ ...s.titlebar, borderBottom: `1px solid ${c.border}` }}
+        className={`flex justify-between items-center h-[38px] px-3 select-none flex-shrink-0 z-50 border-b
+          ${theme === 'dark' ? 'border-zinc-800/60 bg-zinc-950/40' : 'border-zinc-200/60 bg-zinc-100/40'}`}
       >
-        <div style={s.titleLeft}>
-          <div style={{ ...s.dot, background: isProcessing ? '#22c55e' : c.accent, boxShadow: isProcessing ? '0 0 8px #22c55e88' : 'none' }} />
-          <span style={{ ...s.titleText, color: c.text }}>Hiro</span>
-          <span style={{ ...s.titleSub, color: c.sub }}>v0.1</span>
-        </div>
-        <div style={s.titleRight}>
-          <button onClick={minimizeWindow} className="win-btn" style={{ ...s.winBtn, color: c.sub }} title="Minimize">
-            <svg width="10" height="10" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>
+        {/* Left Controls (Settings, Reset, Theme Toggle, Status) */}
+        <div className="flex items-center gap-1.5 pointer-events-auto">
+          {/* Status Dot */}
+          <div className="flex items-center justify-center w-5 h-5 mr-1">
+            {isProcessing ? (
+              <Loader2 className="w-3.5 h-3.5 text-emerald-500 animate-spin" />
+            ) : (
+              <div className={`w-2 h-2 rounded-full ${theme === 'dark' ? 'bg-zinc-400' : 'bg-zinc-500'}`} />
+            )}
+          </div>
+          
+          <button 
+            onClick={() => setShowSettings(!showSettings)} 
+            className="win-btn p-1.5 rounded-md hover:bg-zinc-500/15 text-zinc-400 hover:text-zinc-100 transition-colors"
+            title="Configuration Settings"
+          >
+            <Settings className="w-3.5 h-3.5" />
           </button>
-          <button onClick={toggleSidebarMode} className="win-btn" style={{ ...s.winBtn, color: c.sub }} title="Toggle Sidebar Mode">
-            <svg width="10" height="10" viewBox="0 0 10 10">
-              <rect x="1" y="1" width="8" height="8" rx="1" fill="none" stroke="currentColor" strokeWidth="1"/>
-              <line x1="6" y1="1" x2="6" y2="9" stroke="currentColor" strokeWidth="1"/>
-            </svg>
+          
+          <button 
+            onClick={clearSession} 
+            className="win-btn p-1.5 rounded-md hover:bg-zinc-500/15 text-zinc-400 hover:text-zinc-100 transition-colors"
+            title="New Session / Reset"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
           </button>
-          <button onClick={closeWindow} className="win-btn-close" style={{ ...s.winBtnClose, color: c.sub }} title="Close">
-            <svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" strokeWidth="1.2"/><line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1.2"/></svg>
+          
+          <button 
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
+            className="win-btn p-1.5 rounded-md hover:bg-zinc-500/15 text-zinc-400 hover:text-zinc-100 transition-colors"
+            title="Toggle theme mode"
+          >
+            {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
           </button>
-        </div>
-      </div>
 
-      {/* ─── Toolbar ─── */}
-      <div style={{ ...s.toolbar, borderBottom: `1px solid ${c.border}`, background: theme === 'dark' ? 'rgba(18,18,18,0.6)' : 'rgba(244,244,245,0.6)' }}>
-        <div style={s.toolGroup}>
-          <button style={{ ...s.toolBtn, color: c.text, background: c.btnBg, border: `1px solid ${c.border}` }} onClick={() => setShowSettings(!showSettings)}>
-            ⚙ Settings
+          {isProcessing && (
+            <button 
+              onClick={triggerManualPanic} 
+              className="ml-2 px-2.5 py-0.5 bg-red-950/80 border border-red-800 text-red-300 rounded text-[10px] font-bold tracking-wide uppercase hover:bg-red-900 transition-colors cursor-pointer"
+              title="Stop Agent Loop Execution (Shift+ESC)"
+            >
+              Panic Stop
+            </button>
+          )}
+        </div>
+
+        {/* Right Window Controls */}
+        <div className="flex items-center gap-0.5 z-[1010] pointer-events-auto">
+          <button 
+            onClick={minimizeWindow} 
+            className="win-btn p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors" 
+            title="Minimize"
+          >
+            <Minus className="w-3.5 h-3.5" />
           </button>
-          <button style={{ ...s.toolBtn, color: c.text, background: c.btnBg, border: `1px solid ${c.border}` }} onClick={clearSession}>
-            ↺ New
+          <button 
+            onClick={toggleSidebarMode} 
+            className="win-btn p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors" 
+            title="Toggle Sidebar Layout"
+          >
+            <Columns className="w-3.5 h-3.5" />
           </button>
-          <button style={{ ...s.toolBtn, color: c.text, background: c.btnBg, border: `1px solid ${c.border}` }} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
-            {theme === 'dark' ? '☀' : '◑'}
+          <button 
+            onClick={closeWindow} 
+            className="win-btn-close p-1.5 rounded-md text-zinc-500 hover:text-zinc-100 transition-colors" 
+            title="Close"
+          >
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
-        {isProcessing && (
-          <button style={s.panicBtn} onClick={triggerManualPanic}>
-            ■ Stop
-          </button>
-        )}
       </div>
 
       {/* ─── Error Banner ─── */}
       {errorMsg && (
-        <div style={s.errorBanner}>
-          <strong>Error:</strong> {errorMsg}
+        <div className="flex items-center gap-2 px-4 py-2 bg-red-950/70 border-b border-red-900/60 text-red-300 text-[11px] flex-shrink-0 animate-fade-in">
+          <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+          <div className="truncate"><strong>Error:</strong> {errorMsg}</div>
         </div>
       )}
 
-      {/* ─── Settings Panel ─── */}
-      {showSettings && (
-        <div style={{ ...s.settingsPanel, background: theme === 'dark' ? 'rgba(18,18,18,0.95)' : 'rgba(244,244,245,0.95)', borderBottom: `1px solid ${c.border}` }}>
-          <div style={s.settingsHeader}>
-            <span style={{ ...s.settingsTitle, color: c.text }}>Configuration</span>
-            <button onClick={() => setShowSettings(false)} style={{ ...s.closeSettingsBtn, color: c.sub }}>✕</button>
-          </div>
-
-          <div style={s.settingsGrid}>
-            <div style={s.formGroup}>
-              <label style={{ ...s.label, color: c.sub }}>Provider</label>
-              <select
-                value={providerType}
-                onChange={(e) => {
-                  setProviderType(e.target.value);
-                  setEndpoint(e.target.value === 'local' ? 'http://localhost:11434' : 'https://api.openai.com/v1');
-                }}
-                style={{ ...s.selectField, background: c.inputBg, color: c.text, border: `1px solid ${c.border}` }}
+      {/* ─── Main Viewport Area ─── */}
+      <div className="flex-1 relative flex flex-col overflow-hidden">
+        
+        {/* Chat / Messages List */}
+        <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3 scroll-smooth">
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex w-full ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`max-w-[90%] px-3.5 py-2.5 rounded-xl text-[12.5px] leading-relaxed border flex flex-col gap-2 shadow-sm
+                  ${msg.sender === 'user' 
+                    ? (theme === 'dark' ? 'bg-zinc-900 border-zinc-800/80 text-zinc-200' : 'bg-zinc-100 border-zinc-200/80 text-zinc-800') 
+                    : (theme === 'dark' ? 'bg-zinc-950/40 border-zinc-900 text-zinc-300' : 'bg-white border-zinc-200 text-zinc-700')}`}
               >
-                <option value="local">Local (Ollama / vLLM)</option>
-                <option value="cloud">Cloud (OpenAI / Anthropic)</option>
-              </select>
+                <div>{msg.text}</div>
+
+                {msg.screenshot && (
+                  <div className={`mt-1.5 rounded-lg overflow-hidden border ${theme === 'dark' ? 'border-zinc-800' : 'border-zinc-200'}`}>
+                    <div className={`text-[9px] px-2 py-1 uppercase tracking-wider font-semibold 
+                      ${theme === 'dark' ? 'bg-zinc-900 text-zinc-500' : 'bg-zinc-100 text-zinc-400'}`}>
+                      State Capture Snapshot
+                    </div>
+                    <img src={msg.screenshot} alt="capture" className="w-full max-h-[220px] object-contain block" />
+                  </div>
+                )}
+
+                {msg.thought && (
+                  <div className={`rounded-lg p-2.5 border-l-2 text-[11.5px]
+                    ${theme === 'dark' ? 'bg-zinc-950/70 border-zinc-500 text-zinc-400' : 'bg-zinc-50 border-zinc-600 text-zinc-600'}`}>
+                    <div className="text-[9px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                      <HelpCircle className="w-3 h-3" /> System-2 Thought Trace
+                    </div>
+                    <div>{msg.thought}</div>
+                  </div>
+                )}
+
+                {msg.action && (
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border font-mono text-[11px]
+                    ${theme === 'dark' ? 'bg-zinc-950 border-zinc-800 text-zinc-300' : 'bg-zinc-50 border-zinc-200 text-zinc-800'}`}>
+                    <Play className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                    <code className="break-all">{msg.action}</code>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Settings Overlay Panel */}
+        {showSettings && (
+          <div className={`absolute inset-x-0 top-0 p-4 border-b flex flex-col gap-3 z-45 animate-slide-down backdrop-blur-xl shadow-md
+            ${theme === 'dark' ? 'bg-zinc-950/95 border-zinc-800/80' : 'bg-white/95 border-zinc-200/80'}`}>
+            <div className="flex justify-between items-center">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Configuration Profile</span>
+              <button onClick={() => setShowSettings(false)} className="text-zinc-500 hover:text-zinc-200 text-xs p-1 rounded hover:bg-zinc-500/10">✕</button>
             </div>
 
-            <div style={s.formGroup}>
-              <label style={{ ...s.label, color: c.sub }}>Model</label>
-              <input
-                type="text"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder="ui-tars, gpt-4o, qwen2.5-vl"
-                style={{ ...s.inputField, background: c.inputBg, color: c.text, border: `1px solid ${c.border}` }}
-              />
-            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Provider Source</label>
+                <select
+                  value={providerType}
+                  onChange={(e) => {
+                    setProviderType(e.target.value);
+                    setEndpoint(e.target.value === 'local' ? 'http://localhost:11434' : 'https://api.openai.com/v1');
+                  }}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs outline-none border cursor-pointer
+                    ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800'}`}
+                >
+                  <option value="local">Local (Ollama / vLLM)</option>
+                  <option value="cloud">Cloud (OpenAI / Compatible)</option>
+                </select>
+              </div>
 
-            <div style={{ ...s.formGroup, gridColumn: '1 / -1' }}>
-              <label style={{ ...s.label, color: c.sub }}>Endpoint</label>
-              <input
-                type="text"
-                value={endpoint}
-                onChange={(e) => setEndpoint(e.target.value)}
-                style={{ ...s.inputField, background: c.inputBg, color: c.text, border: `1px solid ${c.border}` }}
-              />
-            </div>
-
-            {providerType === 'cloud' && (
-              <div style={{ ...s.formGroup, gridColumn: '1 / -1' }}>
-                <label style={{ ...s.label, color: c.sub }}>API Key</label>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Model Name</label>
                 <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  style={{ ...s.inputField, background: c.inputBg, color: c.text, border: `1px solid ${c.border}` }}
+                  type="text"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="e.g. minimax-m3:cloud"
+                  className={`rounded-lg px-2.5 py-1.5 text-xs outline-none border
+                    ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800'}`}
                 />
               </div>
-            )}
 
-            <div style={s.formGroup}>
-              <label style={{ ...s.label, color: c.sub }}>Opacity: {opacity}%</label>
-              <input
-                type="range" min="30" max="100" value={opacity}
-                onChange={(e) => setOpacity(Number(e.target.value))}
-                style={s.slider}
-              />
-            </div>
+              <div className="flex flex-col gap-1 col-span-2">
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">API Endpoint URL</label>
+                <input
+                  type="text"
+                  value={endpoint}
+                  onChange={(e) => setEndpoint(e.target.value)}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs outline-none border
+                    ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800'}`}
+                />
+              </div>
 
-            <div style={s.formGroup}>
-              <label style={{ ...s.label, color: c.sub }}>Max Steps</label>
-              <input
-                type="number" min="1" max="50" value={maxSteps}
-                onChange={(e) => setMaxSteps(Number(e.target.value))}
-                style={{ ...s.inputField, background: c.inputBg, color: c.text, border: `1px solid ${c.border}`, width: '70px' }}
-              />
-            </div>
-          </div>
-
-          <div style={s.settingsActions}>
-            <button onClick={saveSettings} style={{ ...s.primaryBtn, background: c.accent, color: theme === 'dark' ? '#000' : '#fff' }}>Save</button>
-            <button onClick={() => setShowSettings(false)} style={{ ...s.ghostBtn, color: c.sub, border: `1px solid ${c.border}` }}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {/* ─── Chat Messages ─── */}
-      <div style={s.chatArea}>
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            style={{
-              ...s.msgRow,
-              justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-            }}
-          >
-            <div
-              style={{
-                ...s.bubble,
-                background: msg.sender === 'user' ? c.userBubble : c.agentBubble,
-                border: `1px solid ${c.border}`,
-              }}
-            >
-              <div style={s.msgText}>{msg.text}</div>
-
-              {msg.screenshot && (
-                <div style={{ ...s.snapWrap, border: `1px solid ${c.border}` }}>
-                  <div style={{ ...s.snapLabel, color: c.sub, background: c.headerBg }}>Snapshot</div>
-                  <img src={msg.screenshot} alt="capture" style={s.snapImg} />
+              {providerType === 'cloud' && (
+                <div className="flex flex-col gap-1 col-span-2">
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">API Key Header</label>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    className={`rounded-lg px-2.5 py-1.5 text-xs outline-none border
+                    ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800'}`}
+                  />
                 </div>
               )}
 
-              {msg.thought && (
-                <div style={{ ...s.trace, borderLeft: `2px solid ${c.accent}`, background: c.headerBg }}>
-                  <div style={{ ...s.traceHead, color: c.accent }}>Thought</div>
-                  <div style={{ ...s.traceBody, color: c.text }}>{msg.thought}</div>
-                </div>
-              )}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Opacity: {opacity}%</label>
+                <input
+                  type="range" min="30" max="100" value={opacity}
+                  onChange={(e) => setOpacity(Number(e.target.value))}
+                  className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-zinc-400 mt-2"
+                />
+              </div>
 
-              {msg.action && (
-                <div style={{ ...s.actionBlock, background: c.inputBg, border: `1px solid ${c.border}` }}>
-                  <span style={{ ...s.actionLabel, color: c.accent }}>→ </span>
-                  <code style={{ fontSize: '0.78rem', color: c.text }}>{msg.action}</code>
-                </div>
-              )}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Max Iteration Steps</label>
+                <input
+                  type="number" min="1" max="50" value={maxSteps}
+                  onChange={(e) => setMaxSteps(Number(e.target.value))}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs outline-none border w-20
+                    ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800'}`}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-2">
+              <button 
+                onClick={saveSettings} 
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm hover:opacity-90 cursor-pointer
+                  ${theme === 'dark' ? 'bg-zinc-100 text-zinc-950' : 'bg-zinc-900 text-zinc-100'}`}
+              >
+                Save Profile
+              </button>
+              <button 
+                onClick={() => setShowSettings(false)} 
+                className={`px-4 py-1.5 rounded-lg text-xs border transition-all cursor-pointer
+                  ${theme === 'dark' ? 'border-zinc-800 text-zinc-400 hover:bg-zinc-900' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50'}`}
+              >
+                Cancel
+              </button>
             </div>
           </div>
-        ))}
-        <div ref={messagesEndRef} />
+        )}
       </div>
 
-      {/* ─── Input Bar ─── */}
-      <form onSubmit={handleSend} style={{ ...s.inputBar, background: theme === 'dark' ? 'rgba(18,18,18,0.8)' : 'rgba(244,244,245,0.8)', borderTop: `1px solid ${c.border}` }}>
+      {/* ─── Bottom Chat Input Area ─── */}
+      <form 
+        onSubmit={handleSend} 
+        className={`flex p-3 gap-2 border-t flex-shrink-0 transition-colors
+          ${theme === 'dark' ? 'bg-zinc-950/65 border-zinc-900' : 'bg-zinc-100/65 border-zinc-200'}`}
+      >
         <input
           type="text"
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
-          placeholder={isProcessing ? 'Executing...' : 'Describe a task...'}
+          placeholder={isProcessing ? 'Executing automated cycle steps...' : 'Describe a task...'}
           disabled={isProcessing}
-          style={{ ...s.chatInput, background: c.inputBg, color: c.text, border: `1px solid ${c.border}` }}
+          className={`flex-1 rounded-lg px-3.5 py-2 text-xs outline-none border transition-all duration-200
+            ${theme === 'dark' 
+              ? 'bg-zinc-900/60 border-zinc-800/80 text-zinc-100 focus:border-zinc-600 focus:bg-zinc-900' 
+              : 'bg-white border-zinc-200/80 text-zinc-850 focus:border-zinc-400 focus:bg-white'}`}
         />
         <button
           type="submit"
           disabled={isProcessing || !instruction.trim()}
-          style={{
-            ...s.sendBtn,
-            background: c.accent,
-            color: theme === 'dark' ? '#000' : '#fff',
-            opacity: (isProcessing || !instruction.trim()) ? 0.4 : 1,
-            cursor: (isProcessing || !instruction.trim()) ? 'not-allowed' : 'pointer',
-          }}
+          className={`flex items-center justify-center w-8 h-8 rounded-lg font-semibold transition-all shadow-sm cursor-pointer
+            ${theme === 'dark' 
+              ? 'bg-zinc-100 text-zinc-950 disabled:bg-zinc-800 disabled:text-zinc-600' 
+              : 'bg-zinc-900 text-zinc-100 disabled:bg-zinc-200 disabled:text-zinc-400'}`}
         >
-          {isProcessing ? '...' : '↑'}
+          <Send className="w-3.5 h-3.5" />
         </button>
       </form>
     </div>
   );
 }
-
-/* ─── Color Palettes ─── */
-const darkColors = {
-  text: '#e4e4e7',
-  sub: '#71717a',
-  border: '#27272a',
-  headerBg: '#141414',
-  btnBg: '#1e1e1e',
-  inputBg: '#1a1a1a',
-  userBubble: '#1e1e1e',
-  agentBubble: '#141414',
-  accent: '#e4e4e7',
-};
-
-const lightColors = {
-  text: '#18181b',
-  sub: '#a1a1aa',
-  border: '#e4e4e7',
-  headerBg: '#f4f4f5',
-  btnBg: '#ebebec',
-  inputBg: '#ffffff',
-  userBubble: '#f4f4f5',
-  agentBubble: '#ffffff',
-  accent: '#18181b',
-};
-
-/* ─── Styles ─── */
-const s: Record<string, React.CSSProperties> = {
-  shell: {
-    display: 'flex',
-    flexDirection: 'column',
-    position: 'absolute',
-    inset: 0,
-    borderRadius: '12px',
-    border: '1px solid',
-    overflow: 'hidden',
-    fontFamily: "'Inter', 'SF Pro Display', system-ui, -apple-system, sans-serif",
-    fontSize: '13px',
-    backdropFilter: 'blur(20px)',
-    WebkitBackdropFilter: 'blur(20px)',
-  },
-  // Titlebar
-  titlebar: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    height: '38px',
-    padding: '0 12px',
-    userSelect: 'none',
-    flexShrink: 0,
-    zIndex: 1000,
-  },
-  titleLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    pointerEvents: 'none',
-  },
-  dot: {
-    width: '7px',
-    height: '7px',
-    borderRadius: '50%',
-    transition: 'all 0.3s ease',
-  },
-  titleText: {
-    fontSize: '12px',
-    fontWeight: 600,
-    letterSpacing: '0.02em',
-  },
-  titleSub: {
-    fontSize: '10px',
-    fontWeight: 400,
-    opacity: 0.5,
-  },
-  titleRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '2px',
-    zIndex: 1010,
-  },
-  winBtn: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    padding: '6px 8px',
-    borderRadius: '4px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    opacity: 0.6,
-    transition: 'opacity 0.15s',
-    pointerEvents: 'auto',
-  },
-  winBtnClose: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    padding: '6px 8px',
-    borderRadius: '4px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    opacity: 0.6,
-    transition: 'all 0.15s',
-    pointerEvents: 'auto',
-  },
-  // Toolbar
-  toolbar: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '6px 12px',
-    flexShrink: 0,
-  },
-  toolGroup: {
-    display: 'flex',
-    gap: '4px',
-  },
-  toolBtn: {
-    padding: '3px 10px',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '11px',
-    fontWeight: 500,
-    transition: 'all 0.15s',
-    lineHeight: '20px',
-  },
-  panicBtn: {
-    background: '#7f1d1d',
-    border: '1px solid #991b1b',
-    color: '#fca5a5',
-    padding: '3px 12px',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '11px',
-    fontWeight: 600,
-    lineHeight: '20px',
-  },
-  errorBanner: {
-    background: '#450a0a',
-    color: '#fca5a5',
-    padding: '8px 14px',
-    fontSize: '11px',
-    flexShrink: 0,
-  },
-  // Settings
-  settingsPanel: {
-    padding: '14px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-    flexShrink: 0,
-  },
-  settingsHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  settingsTitle: {
-    fontSize: '12px',
-    fontWeight: 600,
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase' as const,
-  },
-  closeSettingsBtn: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: '14px',
-    padding: '2px 6px',
-  },
-  settingsGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '10px',
-  },
-  formGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  label: {
-    fontSize: '10px',
-    fontWeight: 500,
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.06em',
-  },
-  selectField: {
-    borderRadius: '6px',
-    padding: '6px 8px',
-    fontSize: '12px',
-    outline: 'none',
-    appearance: 'none' as const,
-  },
-  inputField: {
-    borderRadius: '6px',
-    padding: '6px 8px',
-    fontSize: '12px',
-    outline: 'none',
-  },
-  slider: {
-    width: '100%',
-    accentColor: '#71717a',
-    cursor: 'pointer',
-    height: '4px',
-  },
-  settingsActions: {
-    display: 'flex',
-    gap: '6px',
-  },
-  primaryBtn: {
-    border: 'none',
-    padding: '5px 16px',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontWeight: 600,
-    fontSize: '11px',
-  },
-  ghostBtn: {
-    background: 'transparent',
-    padding: '5px 16px',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '11px',
-  },
-  // Chat
-  chatArea: {
-    flex: 1,
-    padding: '14px',
-    overflowY: 'auto',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px',
-  },
-  msgRow: {
-    display: 'flex',
-    maxWidth: '92%',
-  },
-  bubble: {
-    padding: '10px 13px',
-    borderRadius: '10px',
-    fontSize: '12.5px',
-    lineHeight: 1.45,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-  msgText: {
-    wordBreak: 'break-word',
-  },
-  snapWrap: {
-    marginTop: '4px',
-    borderRadius: '6px',
-    overflow: 'hidden',
-  },
-  snapLabel: {
-    fontSize: '9px',
-    padding: '3px 8px',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.06em',
-  },
-  snapImg: {
-    width: '100%',
-    maxHeight: '200px',
-    objectFit: 'contain',
-    display: 'block',
-  },
-  trace: {
-    borderRadius: '4px',
-    padding: '6px 10px',
-  },
-  traceHead: {
-    fontSize: '9px',
-    fontWeight: 600,
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.06em',
-    marginBottom: '2px',
-  },
-  traceBody: {
-    fontSize: '11.5px',
-  },
-  actionBlock: {
-    fontSize: '11.5px',
-    padding: '5px 8px',
-    borderRadius: '6px',
-    display: 'flex',
-    gap: '4px',
-    alignItems: 'center',
-    fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace",
-  },
-  actionLabel: {
-    fontWeight: 600,
-  },
-  // Input bar
-  inputBar: {
-    display: 'flex',
-    padding: '10px 12px',
-    gap: '8px',
-    flexShrink: 0,
-  },
-  chatInput: {
-    flex: 1,
-    borderRadius: '8px',
-    padding: '9px 12px',
-    fontSize: '12.5px',
-    outline: 'none',
-  },
-  sendBtn: {
-    border: 'none',
-    width: '36px',
-    height: '36px',
-    borderRadius: '8px',
-    fontWeight: 700,
-    fontSize: '16px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'opacity 0.15s',
-  },
-};
