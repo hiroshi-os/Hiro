@@ -668,8 +668,8 @@ Example: macro_block([click(start_box='(517,824)'), type(content='Hello'), hotke
                                     {isStepRunning ? (
                                       <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500 flex-shrink-0" />
                                     ) : (
-                                      <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 text-zinc-500 font-semibold text-[11px] group-open/details:rotate-90 transition-transform">
-                                        ▶
+                                      <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 text-zinc-500 font-bold text-[10px] group-open/details:rotate-90 transition-transform select-none font-mono">
+                                        &gt;
                                       </span>
                                     )}
 
