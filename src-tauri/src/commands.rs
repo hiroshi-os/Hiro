@@ -466,10 +466,10 @@ lazy_static::lazy_static! {
     static ref MACRO_BLOCK_RE: Regex = Regex::new(r"macro_block\(\s*\[([\s\S]*?)\]\s*\)").unwrap();
     static ref ACTION_SPLIT_RE: Regex = Regex::new(r"\),\s*").unwrap();
     // Headless Browser DOM Actions
-    static ref BROWSER_GOTO_RE: Regex = Regex::new(r#"browser_goto\(url=['"](.*?)['"]\)"#).unwrap();
-    static ref BROWSER_CLICK_RE: Regex = Regex::new(r#"browser_click\(selector=['"](.*?)['"]\)"#).unwrap();
-    static ref BROWSER_TYPE_RE: Regex = Regex::new(r#"browser_type\(selector=['"](.*?)['"],\s*text=['"](.*?)['"]\)"#).unwrap();
-    static ref BROWSER_EXTRACT_RE: Regex = Regex::new(r#"browser_extract\(selector=['"](.*?)['"]\)"#).unwrap();
+    static ref BROWSER_GOTO_RE: Regex = Regex::new(r#"browser_goto\(\s*(?:url\s*=\s*)?['"](.*?)['"]\s*\)"#).unwrap();
+    static ref BROWSER_CLICK_RE: Regex = Regex::new(r#"browser_click\(\s*(?:selector\s*=\s*)?['"](.*?)['"]\s*\)"#).unwrap();
+    static ref BROWSER_TYPE_RE: Regex = Regex::new(r#"browser_type\(\s*(?:selector\s*=\s*)?['"](.*?)['"]\s*,\s*(?:text\s*=\s*)?['"](.*?)['"]\s*\)"#).unwrap();
+    static ref BROWSER_EXTRACT_RE: Regex = Regex::new(r#"browser_extract\(\s*(?:selector\s*=\s*)?['"](.*?)['"]\s*\)"#).unwrap();
 }
 
 #[derive(Debug, Clone)]
@@ -609,6 +609,10 @@ pub fn parse_uitars_action(action_str: &str) -> Option<ParsedAction> {
     }
     if let Some(caps) = BROWSER_EXTRACT_RE.captures(clean_str) {
         return Some(ParsedAction::BrowserExtract { selector: caps[1].to_string() });
+    }
+
+    if clean_str.contains("browser_") {
+        println!("⚠️ PARSER WARNING: VLM emitted a browser tool token, but no regex matched it! Raw string: '{}'", clean_str);
     }
 
     None
